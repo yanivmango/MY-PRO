@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סורק כביסה בעל למידה עצמית דינמית</title>
+    <title>סורק כביסה - למידה עצמית קבועה</title>
     <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.4/dist/knn-classifier.min.js"></script>
+    <script src="https://cdn.jsdelivr.npm/@tensorflow-models/knn-classifier@1.2.4/dist/knn-classifier.min.js"></script>
     
     <style>
         body {
@@ -57,6 +57,23 @@
             box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
         }
 
+        .timer-overlay {
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            background: rgba(15, 23, 42, 0.85);
+            color: #ef4444; 
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.85rem;
+            pointer-events: none;
+            z-index: 5;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            display: none; 
+            direction: ltr; 
+        }
+
         .loading-overlay {
             background: #f8fafc;
             padding: 15px;
@@ -76,7 +93,7 @@
         }
 
         .category-text {
-            font-size: 1.6rem;
+            font-size: 1.5rem;
             font-weight: bold;
             color: #16a34a;
             margin: 5px 0;
@@ -98,7 +115,35 @@
             border: 1px solid #e2e8f0;
         }
 
-        /* מודאל דינמי מתכוונן המאפשר גלילה */
+        .batch-panel {
+            background: #f8fafc;
+            border: 1.5px dashed #cbd5e1;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            text-align: right;
+        }
+        .batch-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.1rem;
+            color: #1e293b;
+        }
+        .batch-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+        .batch-grid label { font-weight: bold; }
+        .batch-grid select, .batch-grid input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-sizing: border-box;
+            margin-top: 4px;
+        }
+
         .modal {
             display: none;
             position: absolute;
@@ -129,8 +174,8 @@
             gap: 8px;
             width: 100%;
             max-width: 380px;
-            max-height: 280px; /* הגבלת גובה כדי לא לחרוג ממסך הטלפון */
-            overflow-y: auto; /* מאפשר גלילה אם יש הרבה קטגוריות */
+            max-height: 280px;
+            overflow-y: auto;
             padding-right: 5px;
         }
         .modal-btn {
@@ -157,20 +202,42 @@
             font-size: 0.8rem;
             margin-top: 15px;
         }
+
+        /* כפתור למחיקת כל הזיכרון */
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+        .btn-danger:hover { background: #b91c1c; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>סורק כביסה - למידה עצמית דינמית</h1>
-    <p>כוון את העיגול האדום למרכז הבגד. תוכל להוסיף קטגוריות מותאמות אישית!</p>
+    <h1>סורק כביסה - למידה עצמית קבועה</h1>
+    <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
     <!-- מודאל למידה אקטיבי עם כפתורים דינמיים -->
     <div id="manualModal" class="modal">
         <div class="modal-title">לא זוהה פריט ודאי. בחר קטגוריה ללימוד או הוסף חדשה:</div>
         <div class="modal-buttons" id="modalButtonsContainer">
-            <!-- הכפתורים ייווצרו כאן באופן דינמי באמצעות JavaScript -->
+            <!-- הכפתורים ייווצרו כאן באופן דינמי -->
         </div>
+    </div>
+
+    <!-- מודאל דינמי גדול עבור ספירת הדיליי וצילום הרצף המתוזמן -->
+    <div id="batchOverlay" class="modal">
+        <div id="batchOverlayTitle" class="modal-title" style="font-size: 1.4rem;">הכן את הבגד...</div>
+        <div id="batchOverlayCountdown" style="font-size: 4.5rem; font-weight: bold; color: #ef4444; margin: 15px 0;">3</div>
+        <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">הצילום יתחיל בקרוב, נא להזיז את החפץ בין הצילומים!</div>
     </div>
 
     <div id="loader" class="loading-overlay">
@@ -180,6 +247,7 @@
     <div class="video-container">
         <video id="webcam" autoplay playsinline muted style="display: none;"></video>
         <div class="crosshair" id="targetDot" style="display: none;"></div>
+        <div class="timer-overlay" id="timerOverlay">🕒 10s</div>
     </div>
     
     <div class="detection-card" id="detectionArea" style="display: none;">
@@ -189,9 +257,31 @@
     </div>
 
     <div class="toggle-container">
-        <span>📸 שמירה אוטומטית בזיהוי ודאי:</span>
+        <span>📸 שמירה אוטומטית בזיהוי ודאי (85%+):</span>
         <input type="checkbox" id="autoSaveToggle" style="transform: scale(1.3); cursor: pointer;" checked>
     </div>
+
+    <!-- פנל שליטה לצילום רצף מתוזמן ואימון מהיר -->
+    <div class="batch-panel">
+        <h3>📸 צילום רצף חכם ללימוד מהיר</h3>
+        <div class="batch-grid">
+            <div>
+                <label for="batchCategorySelect">קטגוריה לרצף:</label>
+                <select id="batchCategorySelect"></select>
+            </div>
+            <div>
+                <label for="batchCountInput">כמות תמונות:</label>
+                <input type="number" id="batchCountInput" value="10" min="1" max="50">
+            </div>
+            <div style="grid-column: span 2;">
+                <label for="batchDelayInput">טיימר השהיה (דיליי) לפני תחילת הצילום (שניות):</label>
+                <input type="number" id="batchDelayInput" value="3" min="0" max="15">
+            </div>
+        </div>
+        <button onclick="startTimedBatch()" style="width: 100%; margin-top: 12px; background: #8b5cf6;">החל צילום רצף ואימון מתוזמן 🚀</button>
+    </div>
+
+    <button class="btn-danger" onclick="clearSavedData()">אתחל מערכת ומחק זיכרון שמור 🗑️</button>
 
     <div class="log-box" id="log"></div>
 </div>
@@ -199,6 +289,7 @@
 <script>
     const video = document.getElementById('webcam');
     const targetDot = document.getElementById('targetDot');
+    const timerOverlay = document.getElementById('timerOverlay');
     const loader = document.getElementById('loader');
     const detectionArea = document.getElementById('detectionArea');
     const mappedCategoryText = document.getElementById('mappedCategory');
@@ -206,6 +297,7 @@
     const autoSaveToggle = document.getElementById('autoSaveToggle');
     const manualModal = document.getElementById('manualModal');
     const modalButtonsContainer = document.getElementById('modalButtonsContainer');
+    const batchCategorySelect = document.getElementById('batchCategorySelect');
     const logBox = document.getElementById('log');
 
     let model = null;
@@ -213,11 +305,14 @@
     let isPaused = false;
     let lastSavedClass = "";
     let lastSaveTime = 0;
-    let lastLaundryDetectedTime = Date.now(); 
     const SAVE_COOLDOWN = 4000; 
-    const NO_DETECTION_TIMEOUT = 10000; 
 
-    // רשימת קטגוריות דינמית התחלתית (מפתח באנגלית, שם בעברית, וצבע כפתור)
+    let secondsLeft = 10;
+    let countdownInterval = null;
+    let countdownActive = false;
+    const CONFIDENCE_THRESHOLD = 0.85; 
+
+    // הגדרת ברירת מחדל של קטגוריות
     let laundryCategories = [
         { key: "shirt", name: "חולצה (Shirt)", color: "#3b82f6" },
         { key: "pants", name: "מכנסיים (Pants)", color: "#10b981" },
@@ -248,21 +343,22 @@
             video.srcObject = stream;
             video.style.display = "block";
             targetDot.style.display = "block";
+            timerOverlay.style.display = "block";
         } catch (err) {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             video.srcObject = stream;
             video.style.display = "block";
             targetDot.style.display = "block";
+            timerOverlay.style.display = "block";
         }
     }
 
-    // תרגום מפתח קטגוריה לשם עברי תואם
     function getCategoryHebrewName(key) {
         const found = laundryCategories.find(cat => cat.key === key);
         return found ? found.name.split(' ')[0] : key;
     }
 
-    // מיפוי בסיסי עבור המודל הגנרי של גוגל
+    // מיפוי עבור המודל של גוגל
     function mapPredictionToLaundry(label) {
         const l = label.toLowerCase();
         if (l.includes('jersey') || l.includes('t-shirt') || l.includes('tee shirt') || 
@@ -281,27 +377,78 @@
         return { name: "לא זוהה", key: "other" };
     }
 
-    // אתחול המערכות
+    // שמירה אוטומטית של קטגוריות ומודל הלמידה לזיכרון הדפדפן
+    function saveModelAndCategories() {
+        try {
+            // 1. שמירת קטגוריות
+            localStorage.setItem('laundryCategories', JSON.stringify(laundryCategories));
+
+            // 2. שמירת מערך הלמידה של ה-KNN (אם קיימים נתונים)
+            if (knn && knn.getNumClasses() > 0) {
+                const dataset = knn.getClassifierDataset();
+                // הפיכת הטנזורים המקומיים למערכים פשוטים הניתנים לשמירה כטקסט
+                const datasetArray = Object.entries(dataset).map(([label, tensor]) => {
+                    return [
+                        label,
+                        Array.from(tensor.dataSync()),
+                        tensor.shape
+                    ];
+                });
+                localStorage.setItem('knnDataset', JSON.stringify(datasetArray));
+                writeLog("💾 הנתונים ומודל הלמידה נשמרו אוטומטית בדפדפן!");
+            } else {
+                writeLog("💾 קטגוריות נשמרו. (אין עדיין מידע למידה לשמירה במודל)");
+            }
+        } catch (e) {
+            writeLog("❌ שגיאה בשמירה לזיכרון הדפדפן: " + e.message);
+        }
+    }
+
+    // אתחול המערכות וטעינת זיכרון שמור
     async function initAI() {
         try {
+            // א. טעינת קטגוריות שמורות
+            const savedCategories = localStorage.getItem('laundryCategories');
+            if (savedCategories) {
+                laundryCategories = JSON.parse(savedCategories);
+                writeLog("📂 נטענו קטגוריות שנשמרו בעבר.");
+            }
+
             model = await mobilenet.load();
             knn = knnClassifier.create();
+
+            // ב. טעינת מודל למידה עצמית שמור
+            const savedKnnDataset = localStorage.getItem('knnDataset');
+            if (savedKnnDataset) {
+                try {
+                    const datasetArray = JSON.parse(savedKnnDataset);
+                    const tensorObj = {};
+                    // שחזור מערכי המספרים בחזרה לטנזורים עבור ה-KNN
+                    datasetArray.forEach(([label, data, shape]) => {
+                        tensorObj[label] = tf.tensor(data, shape);
+                    });
+                    knn.setClassifierDataset(tensorObj);
+                    writeLog("🧠 נטען מודל למידה עצמית שמור מהפעלות קודמות!");
+                } catch (e) {
+                    writeLog("❌ שגיאה בטעינת זיכרון הלמידה: " + e.message);
+                }
+            }
+
             loader.style.display = "none";
             detectionArea.style.display = "block";
-            writeLog("מערכת למידה עצמית דינמית מוכנה!");
-            lastLaundryDetectedTime = Date.now();
-            renderModalButtons(); // יצירת כפתורי המודאל בפעם הראשונה
+            writeLog("המערכת מוכנה לפעילות!");
+            renderModalButtons(); 
             detectFrame();
         } catch (err) {
             writeLog("שגיאה באתחול: " + err.message);
         }
     }
 
-    // יצירת כפתורי הקטגוריות במודאל באופן דינמי
+    // יצירת כפתורי הקטגוריות
     function renderModalButtons() {
         modalButtonsContainer.innerHTML = "";
+        batchCategorySelect.innerHTML = ""; 
 
-        // יצירת כפתור עבור כל קטגוריה קיימת ברשימה
         laundryCategories.forEach(cat => {
             const btn = document.createElement('button');
             btn.className = "modal-btn";
@@ -309,28 +456,30 @@
             btn.innerText = cat.name;
             btn.onclick = () => selectManualCategory(cat.key);
             modalButtonsContainer.appendChild(btn);
+
+            const opt = document.createElement('option');
+            opt.value = cat.key;
+            opt.innerText = cat.name.split(' ')[0];
+            batchCategorySelect.appendChild(opt);
         });
 
-        // כפתור הוספת קטגוריה מותאמת אישית חדשה
         const addNewBtn = document.createElement('button');
         addNewBtn.className = "modal-btn";
-        addNewBtn.style.background = "#475569"; // צבע אפור כהה
+        addNewBtn.style.background = "#475569"; 
         addNewBtn.style.gridColumn = "span 2";
         addNewBtn.innerText = "➕ קטגוריה חדשה...";
         addNewBtn.onclick = createNewCategory;
         modalButtonsContainer.appendChild(addNewBtn);
 
-        // כפתור ביטול
         const cancelBtn = document.createElement('button');
         cancelBtn.className = "modal-btn";
-        cancelBtn.style.background = "#ef4444"; // אדום
+        cancelBtn.style.background = "#ef4444"; 
         cancelBtn.style.gridColumn = "span 2";
         cancelBtn.innerText = "ביטול / חזרה לסריקה";
         cancelBtn.onclick = closeManualModal;
         modalButtonsContainer.appendChild(cancelBtn);
     }
 
-    // פונקציה ליצירת קטגוריה חדשה על ידי המשתמש
     function createNewCategory() {
         const rawName = prompt("הזן שם לקטגוריה החדשה (למשל: צעיף, תחתונים, נעליים):");
         if (!rawName) return;
@@ -338,20 +487,16 @@
         const sanitizedName = rawName.trim();
         if (sanitizedName === "") return;
 
-        // יצירת מפתח ייחודי ובטוח לשם הקובץ (מסיר תווים מיוחדים ומחבר)
         const key = "custom_" + sanitizedName.replace(/[^a-zA-Z0-9א-ת]/g, "_");
 
-        // בדיקה שלא קיימת קטגוריה עם אותו שם או מפתח
         if (laundryCategories.some(cat => cat.key === key || cat.name.split(' ')[0] === sanitizedName)) {
             alert("קטגוריה זו כבר קיימת ברשימה!");
             return;
         }
 
-        // צבעים אקראיים יפים לכפתורים החדשים
         const randomColors = ["#06b6d4", "#ec4899", "#14b8a6", "#f43f5e", "#84cc16"];
         const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
 
-        // הוספה לרשימה הדינמית
         laundryCategories.push({
             key: key,
             name: `${sanitizedName} (מותאם)`,
@@ -361,8 +506,120 @@
         writeLog(`➕ נוספה קטגוריה חדשה לרשימה: ${sanitizedName}`);
         speak(`נוספה קטגוריית ${sanitizedName}`);
         
-        // ציור מחדש של הכפתורים במודאל
         renderModalButtons();
+        saveModelAndCategories(); // שמירה אוטומטית לזיכרון
+    }
+
+    // פונקציות ניהול טיימר ה-10 שניות הויזואלי
+    function startCountdown() {
+        if (countdownActive) return; 
+        countdownActive = true;
+        
+        timerOverlay.style.display = "block";
+        timerOverlay.style.color = "#ef4444"; 
+        timerOverlay.style.borderColor = "rgba(239, 68, 68, 0.4)";
+        timerOverlay.innerText = `🕒 ידני בעוד: ${secondsLeft}ש'`;
+
+        if (countdownInterval) clearInterval(countdownInterval);
+
+        countdownInterval = setInterval(() => {
+            if (isPaused) return;
+            secondsLeft--;
+            timerOverlay.innerText = `🕒 ידני בעוד: ${secondsLeft}ש'`;
+
+            if (secondsLeft <= 0) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+                countdownActive = false;
+                triggerManualFallback();
+            }
+        }, 1000);
+    }
+
+    function resetCountdown() {
+        secondsLeft = 10;
+        if (countdownInterval) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+        }
+        countdownActive = false;
+        
+        timerOverlay.style.display = "block";
+        timerOverlay.style.color = "#10b981"; 
+        timerOverlay.style.borderColor = "rgba(16, 185, 129, 0.4)";
+        timerOverlay.innerText = `🕒 זיהוי נעול`;
+    }
+
+    // מנגנון צילום רצף מתוזמן חכם
+    function startTimedBatch() {
+        const delay = parseInt(document.getElementById('batchDelayInput').value) || 0;
+        const total = parseInt(document.getElementById('batchCountInput').value) || 10;
+        const category = batchCategorySelect.value;
+
+        isPaused = true; 
+        timerOverlay.style.display = "none"; 
+
+        const batchOverlay = document.getElementById('batchOverlay');
+        const batchTitle = document.getElementById('batchOverlayTitle');
+        const batchCounter = document.getElementById('batchOverlayCountdown');
+        const batchSub = document.getElementById('batchOverlaySub');
+
+        batchOverlay.style.display = "flex";
+        batchTitle.innerText = `הכן את הבגד עבור קטגוריית: ${getCategoryHebrewName(category)}`;
+        batchSub.innerText = "נא למקם את פריט הלבוש מתחת לכוונת האדומה";
+
+        let currentDelay = delay;
+        batchCounter.innerText = currentDelay;
+        speak(`צילום הרצף יתחיל בעוד ${currentDelay}`);
+
+        const delayTimer = setInterval(() => {
+            currentDelay--;
+            if (currentDelay > 0) {
+                batchCounter.innerText = currentDelay;
+                speak(currentDelay.toString());
+            } else {
+                clearInterval(delayTimer);
+                runBatchCaptureProcess(total, category);
+            }
+        }, 1000);
+    }
+
+    // תהליך צילום הרצף בפועל והאימון המהיר
+    function runBatchCaptureProcess(total, category) {
+        const batchCounter = document.getElementById('batchOverlayCountdown');
+        const batchTitle = document.getElementById('batchOverlayTitle');
+        const batchSub = document.getElementById('batchOverlaySub');
+
+        batchTitle.innerText = "מצלם ומאמן את המודל ברצף...";
+        batchSub.innerText = "נא לסובב/להזיז את הבגד מול המצלמה לקבלת זוויות מגוונות!";
+        
+        let capturedCount = 0;
+        batchCounter.innerText = `${capturedCount} / ${total}`;
+
+        const captureTimer = setInterval(() => {
+            capturedCount++;
+            batchCounter.innerText = `${capturedCount} / ${total}`;
+
+            saveSnapshot(`batch_${category}`);
+
+            const activation = model.infer(video, true);
+            knn.addExample(activation, category);
+
+            writeLog(`🧠 למידה מואצת: אומנה דוגמה מספר ${capturedCount} עבור: ${getCategoryHebrewName(category)}`);
+
+            if (capturedCount >= total) {
+                clearInterval(captureTimer);
+                
+                speak("צילום הרצף הושלם בהצלחה");
+                writeLog(`✅ צילום רצף מתוזמן הושלם: נשמרו ואומנו ${total} תמונות בגלריה.`);
+                
+                saveModelAndCategories(); // שמירת כל מה שנלמד ברצף לזיכרון של הדפדפן
+
+                document.getElementById('batchOverlay').style.display = "none";
+                secondsLeft = 10;
+                isPaused = false;
+            }
+        }, 1200);
     }
 
     // לולאת הזיהוי
@@ -379,20 +636,18 @@
             let probability = 0;
             let isKnnPrediction = false;
 
-            // א. בדיקה במודל הלמידה העצמית המקומי
             if (knn.getNumClasses() > 0) {
                 const knnResult = await knn.predictClass(activation);
                 const topKnnClass = knnResult.label;
                 const knnConfidence = knnResult.confidences[topKnnClass];
 
-                if (knnConfidence > 0.70 && topKnnClass !== "other") {
+                if (knnConfidence >= CONFIDENCE_THRESHOLD && topKnnClass !== "other") {
                     predictedLabel = topKnnClass;
                     probability = knnConfidence;
                     isKnnPrediction = true;
                 }
             }
 
-            // ב. גיבוי במודל הגנרי של גוגל
             if (predictedLabel === "other") {
                 const predictions = await model.classify(video);
                 if (predictions && predictions.length > 0) {
@@ -401,7 +656,7 @@
                     const rawProb = topPrediction.probability;
                     const laundryMatch = mapPredictionToLaundry(rawName);
 
-                    if (laundryMatch.key !== "other" && rawProb > 0.40) {
+                    if (laundryMatch.key !== "other" && rawProb >= CONFIDENCE_THRESHOLD) {
                         predictedLabel = laundryMatch.key;
                         probability = rawProb;
                     }
@@ -410,9 +665,8 @@
 
             activation.dispose();
 
-            // ג. עדכון ממשק ושמירה
             if (predictedLabel !== "other") {
-                lastLaundryDetectedTime = Date.now(); 
+                resetCountdown(); 
                 
                 const hebrewName = getCategoryHebrewName(predictedLabel);
                 const sourceInfo = isKnnPrediction ? " (מתוך למידה עצמית 🧠)" : " (זיהוי גנרי)";
@@ -431,13 +685,11 @@
                     }
                 }
             } else {
-                mappedCategoryText.innerText = "לא זוהה פריט ודאי";
+                mappedCategoryText.innerText = "מחפש פריט ודאי (85% ומעלה)...";
                 mappedCategoryText.style.color = "#64748b";
-                rawOutputText.innerText = "מחפש פריטי כביסה...";
-
-                if (Date.now() - lastLaundryDetectedTime > NO_DETECTION_TIMEOUT) {
-                    triggerManualFallback();
-                }
+                rawOutputText.innerText = "ודאות זיהוי נמוכה";
+                
+                startCountdown();
             }
 
         } catch (e) {}
@@ -448,12 +700,13 @@
     // מנגנון כשל ידני
     function triggerManualFallback() {
         isPaused = true;
-        writeLog("⚠️ לא זוהה פריט במשך 10 שניות. נא לבחור קטגוריה ללימוד.");
+        timerOverlay.style.display = "none"; 
+        writeLog("⚠️ לא זוהה פריט במשך 10 שניות. עובר לבחירה ידנית.");
         speak("לא זיהיתי. נא לבחור קטגוריה ללימוד.");
         manualModal.style.display = "flex";
     }
 
-    // בחירה ידנית המאמנת את המודל דינמית
+    // בחירה ידנית
     function selectManualCategory(category) {
         saveSnapshot(`learned_${category}`);
         
@@ -465,12 +718,23 @@
         speak(`למדתי ${hebrewName} ונשמר בהצלחה`);
         
         closeManualModal();
+        saveModelAndCategories(); // שמירה אוטומטית של המידע החדש שנלמד
     }
 
     function closeManualModal() {
         manualModal.style.display = "none";
-        lastLaundryDetectedTime = Date.now(); 
+        secondsLeft = 10; 
         isPaused = false;
+    }
+
+    // מחיקת כל המידע השמור בדפדפן ואתחול מחדש
+    function clearSavedData() {
+        if (confirm("האם אתה בטוח שברצונך למחוק לצמיתות את כל הקטגוריות המותאמות אישית ואת זיכרון הלמידה של המודל?")) {
+            localStorage.removeItem('laundryCategories');
+            localStorage.removeItem('knnDataset');
+            alert("הזיכרון נמחק בהצלחה! האפליקציה תתרענן מחדש כעת.");
+            window.location.reload();
+        }
     }
 
     // שמירת התמונה לגלריית המכשיר
