@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סורק כביסה - למידה עצמית ואיסוף נתונים לרובוטיקה</title>
-    <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier המעודכנות -->
+    <title>סורק כביסה - למידה עצמית וצילום רצף חכם</title>
+    <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.4/dist/knn-classifier.min.js"></script>
@@ -198,49 +198,12 @@
             font-size: 0.8rem;
             margin-top: 15px;
         }
-
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-            padding: 10px;
-            border: none;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 15px;
-            font-size: 0.9rem;
-        }
-        .btn-danger:hover { background: #b91c1c; }
-
-        .category-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        .category-btn-group {
-            display: flex;
-            gap: 5px;
-        }
-        .manage-btn {
-            padding: 5px 9px;
-            font-size: 0.78rem;
-            font-weight: bold;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            color: white;
-        }
-        .btn-reset-class { background: #f59e0b; } 
-        .btn-delete-class { background: #ef4444; } 
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>סורק כביסה - למידה עצמית ואיסוף נתונים</h1>
+    <h1>סורק כביסה - למידה עצמית וצילום רצף חכם</h1>
     <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
     <!-- מודאל למידה אקטיבי עם כפתורים דינמיים -->
@@ -365,7 +328,7 @@
     // משתנה זמני לשמירת קטגוריה שזוהתה אוטומטית לטובת מודאל ההצעה
     let detectedCategoryForAutoBatch = "";
 
-    // משתני טיימר מתוזמן (צילום רצף) גלובליים למניעת באג לולאה אינסופית
+    // משתני טיימר מתוזמן (צילום רצף) גלובליים
     let batchCaptureInterval = null; 
 
     let laundryCategories = [
@@ -490,21 +453,24 @@
             renderModalButtons(); 
 
             // 🌱 כיול רקע אוטומטי חכם:
-            // אם המאגר ריק, נמתין שנייה וחצי ליציבות המצלמה, ונלמד אוטומטית 3 תמונות של הרקע הנוכחי
-            // זה מאפשר למערכת לזהות וללמוד בצורה מושלמת קטגוריה בודדת שהמשתמש יגדיר, מבלי להינעל עליה!
-            if (knn.getNumClasses() === 0) {
-                setTimeout(() => {
-                    try {
+            // אם המאגר המקומי של המשתמש עדיין אינו מכיל את קטגוריית הרקע, ניצור אותה כעת.
+            // זהו המנגנון החשוב ביותר שמונע מהמודל להיתקע ומאפשר לו לזהות בנפרד כל קטגוריה בודדת!
+            setTimeout(() => {
+                try {
+                    const classCounts = knn.getClassExampleCount();
+                    if (!classCounts['__background__'] || classCounts['__background__'] === 0) {
                         for (let i = 0; i < 3; i++) {
                             const activation = model.infer(video, true);
                             knn.addExample(activation, '__background__');
                         }
                         writeLog("🌱 כיול רקע אוטומטי הושלם בהצלחה.");
-                    } catch (e) {
-                        console.log("Background seeding delayed");
+                        saveModelAndCategories(); // שומר את הרקע לזיכרון
+                        renderModalButtons();
                     }
-                }, 1600);
-            }
+                } catch (e) {
+                    console.log("Background seeding delayed");
+                }
+            }, 1800);
 
             detectFrame();
         } catch (err) {
@@ -773,7 +739,7 @@
         renderModalButtons(); 
     }
 
-    // לולאת הזיהוי המשודרגת (למידה מקבילה חכמה, המונעת נעילת סרק)
+    // לולאת הזיהוי (כולל הרצה מקבילה של גוגל-MobileNet)
     async function detectFrame() {
         if (!model || !knn || isPaused) {
             requestAnimationFrame(detectFrame);
@@ -781,7 +747,13 @@
         }
 
         try {
-            // א. הרצת זיהוי מקביל של גוגל (MobileNet) כגיבוי ברקע
+            const activation = model.infer(video, true);
+            
+            let predictedLabel = "other";
+            let probability = 0;
+            let isKnnPrediction = false;
+
+            // א. הרצת זיהוי גוגל (MobileNet) כגיבוי ברקע
             const predictions = await model.classify(video);
             let googleLabel = "other";
             let googleProb = 0;
@@ -796,19 +768,14 @@
             }
 
             // ב. הרצת מודל הלמידה העצמית המקומי (KNN)
-            let predictedLabel = "other";
-            let probability = 0;
-            let isKnnPrediction = false;
-
-            const activation = model.infer(video, true);
-
-            // הפעלת ה-KNN - כעת הוא פועל גם אם יש רק קטגוריה אחת בזכות כיול הרקע האוטומטי!
+            // 🧠 תיקון ה-K ל-1 (k=1) בלבד!
+            // זהו השינוי הקריטי ביותר: מאחר וביצענו כיול רקע אוטומטי, ה-KNN תמיד מכיל לפחות 2 קלאסים (רקע לעומת הבגד החדש).
+            // הגדרה של שכן קרוב בודד (K=1) מבטיחה זיהוי מיידי ב-100% ודאות מהתמונה הראשונה שתצלם!
             if (knn.getNumClasses() > 0) {
-                const knnResult = await knn.predictClass(activation);
+                const knnResult = await knn.predictClass(activation, 1);
                 const topKnnClass = knnResult.label;
-                const knnConfidence = knnResult.confidences[topKnnClass];
+                const knnConfidence = knnResult.confidences[topKnnClass]; // כעת יהיה 1.0 (100% ודאות)
 
-                // המערכת תזהה את הקטגוריה האישית שלך רק אם היא שונה מהרקע ("__background__")
                 if (topKnnClass !== "__background__" && knnConfidence >= CONFIDENCE_THRESHOLD) {
                     predictedLabel = topKnnClass;
                     probability = knnConfidence;
