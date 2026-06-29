@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סורק כביסה - למידה עצמית קבועה</title>
-    <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier -->
+    <title>סורק כביסה - למידה עצמית וניהול זיכרון קבוע</title>
+    <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier המעודכנות -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
-    <script src="https://cdn.jsdelivr.npm/@tensorflow-models/knn-classifier@1.2.4/dist/knn-classifier.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.4/dist/knn-classifier.min.js"></script>
     
     <style>
         body {
@@ -217,6 +217,30 @@
             font-size: 0.9rem;
         }
         .btn-danger:hover { background: #b91c1c; }
+
+        /* לוח ניהול זיכרון וקטגוריות */
+        .category-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .category-btn-group {
+            display: flex;
+            gap: 5px;
+        }
+        .manage-btn {
+            padding: 5px 9px;
+            font-size: 0.78rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: white;
+        }
+        .btn-reset-class { background: #f59e0b; } /* כתום */
+        .btn-delete-class { background: #ef4444; } /* אדום */
     </style>
 </head>
 <body>
@@ -281,7 +305,15 @@
         <button onclick="startTimedBatch()" style="width: 100%; margin-top: 12px; background: #8b5cf6;">החל צילום רצף ואימון מתוזמן 🚀</button>
     </div>
 
-    <button class="btn-danger" onclick="clearSavedData()">אתחל מערכת ומחק זיכרון שמור 🗑️</button>
+    <!-- לוח ניהול זיכרון וקטגוריות חדש -->
+    <div class="batch-panel" style="border-style: solid;">
+        <h3>📋 ניהול קטגוריות וזיכרון המודל</h3>
+        <div id="categoryManagerList">
+            <!-- הקטגוריות והזיכרון שלהן ייטענו כאן דינמית -->
+        </div>
+    </div>
+
+    <button class="btn-danger" onclick="clearSavedData()">אתחל מערכת ומחק זיכרון כללי 🗑️</button>
 
     <div class="log-box" id="log"></div>
 </div>
@@ -298,6 +330,7 @@
     const manualModal = document.getElementById('manualModal');
     const modalButtonsContainer = document.getElementById('modalButtonsContainer');
     const batchCategorySelect = document.getElementById('batchCategorySelect');
+    const categoryManagerList = document.getElementById('categoryManagerList');
     const logBox = document.getElementById('log');
 
     let model = null;
@@ -386,7 +419,6 @@
             // 2. שמירת מערך הלמידה של ה-KNN (אם קיימים נתונים)
             if (knn && knn.getNumClasses() > 0) {
                 const dataset = knn.getClassifierDataset();
-                // הפיכת הטנזורים המקומיים למערכים פשוטים הניתנים לשמירה כטקסט
                 const datasetArray = Object.entries(dataset).map(([label, tensor]) => {
                     return [
                         label,
@@ -397,7 +429,8 @@
                 localStorage.setItem('knnDataset', JSON.stringify(datasetArray));
                 writeLog("💾 הנתונים ומודל הלמידה נשמרו אוטומטית בדפדפן!");
             } else {
-                writeLog("💾 קטגוריות נשמרו. (אין עדיין מידע למידה לשמירה במודל)");
+                localStorage.removeItem('knnDataset'); // ניקוי ה-dataset אם אין קלאסים מאומנים
+                writeLog("💾 קטגוריות נשמרו.");
             }
         } catch (e) {
             writeLog("❌ שגיאה בשמירה לזיכרון הדפדפן: " + e.message);
@@ -423,7 +456,6 @@
                 try {
                     const datasetArray = JSON.parse(savedKnnDataset);
                     const tensorObj = {};
-                    // שחזור מערכי המספרים בחזרה לטנזורים עבור ה-KNN
                     datasetArray.forEach(([label, data, shape]) => {
                         tensorObj[label] = tf.tensor(data, shape);
                     });
@@ -444,7 +476,7 @@
         }
     }
 
-    // יצירת כפתורי הקטגוריות
+    // יצירת כפתורי הקטגוריות ועדכון לוח ניהול הזיכרון
     function renderModalButtons() {
         modalButtonsContainer.innerHTML = "";
         batchCategorySelect.innerHTML = ""; 
@@ -478,6 +510,9 @@
         cancelBtn.innerText = "ביטול / חזרה לסריקה";
         cancelBtn.onclick = closeManualModal;
         modalButtonsContainer.appendChild(cancelBtn);
+
+        // עדכון פנל ניהול הזיכרון בכל פעם שהכפתורים משתנים
+        renderCategoryManager();
     }
 
     function createNewCategory() {
@@ -507,7 +542,88 @@
         speak(`נוספה קטגוריית ${sanitizedName}`);
         
         renderModalButtons();
-        saveModelAndCategories(); // שמירה אוטומטית לזיכרון
+        saveModelAndCategories(); 
+    }
+
+    // לוח ניהול זיכרון וקטגוריות דינמי (השדרוג החדש)
+    function renderCategoryManager() {
+        if (!categoryManagerList) return;
+        categoryManagerList.innerHTML = "";
+
+        laundryCategories.forEach(cat => {
+            let exampleCount = 0;
+            if (knn) {
+                const classExampleCount = knn.getClassExampleCount();
+                exampleCount = classExampleCount[cat.key] || 0;
+            }
+
+            const row = document.createElement('div');
+            row.className = "category-row";
+            row.innerHTML = `
+                <div>
+                    <span style="font-weight: bold; color: ${cat.color}">${cat.name.split(' ')[0]}</span>
+                    <span style="font-size: 0.8rem; color: #64748b; margin-right: 5px;">(${exampleCount} תמונות בזיכרון)</span>
+                </div>
+                <div class="category-btn-group">
+                    <button class="manage-btn btn-reset-class" onclick="clearCategoryModel('${cat.key}')">אפס זיכרון</button>
+                    <button class="manage-btn btn-delete-class" onclick="deleteCategory('${cat.key}')">מחק קטגוריה</button>
+                </div>
+            `;
+            categoryManagerList.appendChild(row);
+        });
+    }
+
+    // איפוס זיכרון לקטגוריה ספציפית בנפרד (הדרישה שלך)
+    function clearCategoryModel(key) {
+        const name = getCategoryHebrewName(key);
+        if (confirm(`האם אתה בטוח שברצונך למחוק רק את זיכרון הלמידה של "${name}"? (הקטגוריה עצמה תישאר, אך היא לא תזוהה אוטומטית)`)) {
+            if (knn) {
+                try {
+                    // בדיקה אם בכלל יש דוגמאות ב-class הזה
+                    if (knn.getClassExampleCount()[key]) {
+                        knn.clearClass(key);
+                        writeLog(`🧹 נמחק זיכרון הלמידה של הקטגוריה: ${name}`);
+                        speak(`נמחק הזיכרון של ${name}`);
+                        
+                        saveModelAndCategories();
+                        renderModalButtons(); // מרענן את כל הממשקים
+                    } else {
+                        alert(`לא קיים מידע למידה בזיכרון עבור "${name}".`);
+                    }
+                } catch (e) {
+                    writeLog("❌ שגיאה במחיקת זיכרון: " + e.message);
+                }
+            }
+        }
+    }
+
+    // מחיקת קטגוריה לחלוטין בנפרד (הדרישה שלך)
+    function deleteCategory(key) {
+        const name = getCategoryHebrewName(key);
+
+        if (laundryCategories.length <= 1) {
+            alert("חובה להשאיר לפחות קטגוריה אחת במערכת!");
+            return;
+        }
+
+        if (confirm(`האם אתה בטוח שברצונך למחוק לחלוטין את הקטגוריה "${name}" ואת כל זיכרון הלמידה שלה מהמערכת?`)) {
+            if (knn) {
+                try {
+                    if (knn.getClassExampleCount()[key]) {
+                        knn.clearClass(key);
+                    }
+                } catch (e) {}
+            }
+
+            // סינון הקטגוריה שנמחקה מרשימת הקטגוריות
+            laundryCategories = laundryCategories.filter(cat => cat.key !== key);
+            
+            writeLog(`🗑️ הקטגוריה "${name}" נמחקה לחלוטין מהמערכת.`);
+            speak(`מחקתי את קטגוריית ${name}`);
+
+            saveModelAndCategories();
+            renderModalButtons();
+        }
     }
 
     // פונקציות ניהול טיימר ה-10 שניות הויזואלי
@@ -613,11 +729,12 @@
                 speak("צילום הרצף הושלם בהצלחה");
                 writeLog(`✅ צילום רצף מתוזמן הושלם: נשמרו ואומנו ${total} תמונות בגלריה.`);
                 
-                saveModelAndCategories(); // שמירת כל מה שנלמד ברצף לזיכרון של הדפדפן
+                saveModelAndCategories(); 
 
                 document.getElementById('batchOverlay').style.display = "none";
                 secondsLeft = 10;
                 isPaused = false;
+                renderModalButtons(); // רענון המונה בפנל הניהול
             }
         }, 1200);
     }
@@ -718,7 +835,8 @@
         speak(`למדתי ${hebrewName} ונשמר בהצלחה`);
         
         closeManualModal();
-        saveModelAndCategories(); // שמירה אוטומטית של המידע החדש שנלמד
+        saveModelAndCategories(); 
+        renderModalButtons(); // עדכון לוח ניהול הזיכרון
     }
 
     function closeManualModal() {
