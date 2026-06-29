@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מערכת זיהוי כביסה מובנית לרובוטיקה</title>
+    <!-- טעינת ספריות TensorFlow.js ו-MobileNet ישירות מהאינטרנט -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
+    
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            text-align: center;
+            background: #f1f5f9;
+            margin: 0;
+            padding: 15px;
+            color: #1e293b;
+        }
+        .container {
+            max-width: 500px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+        h1 { font-size: 1.4rem; margin-bottom: 5px; color: #0f172a; }
+        p { color: #64748b; font-size: 0.9rem; margin-top: 0; }
+        
+        video {
+            width: 100%;
+            border-radius: 12px;
+            background: #000;
+            margin-top: 10px;
+        }
+
+        .loading-overlay {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            font-weight: bold;
+            color: #2563eb;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .detection-card {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border: 1.5px solid #cbd5e1;
+        }
+
+        .category-text {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #16a34a;
+            margin: 5px 0;
+        }
+
+        .raw-text {
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        .toggle-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #f8fafc;
+            border-radius: 8px;
+            margin-top: 10px;
+            border: 1px solid #e2e8f0;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover { background: #1d4ed8; }
+
+        .log-box {
+            background: #0f172a;
+            color: #38bdf8;
+            padding: 10px;
+            border-radius: 8px;
+            height: 100px;
+            overflow-y: auto;
+            text-align: left;
+            font-family: monospace;
+            font-size: 0.8rem;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>סורק כביסה חכם לרובוטיקה</h1>
+    <p>מערכת זיהוי מובנית המבוססת על מודל MobileNet</p>
+
+    <!-- הודעת טעינה עבור המודל -->
+    <div id="loader" class="loading-overlay">
+        ⏳ טוען מודל בינה מלאכותית לטלפון... (כ-5 שניות)
+    </div>
+
+    <video id="webcam" autoplay playsinline muted style="display: none;"></video>
+    
+    <div class="detection-card" id="detectionArea" style="display: none;">
+        <div>פריט שזוהה במיפוי כביסה:</div>
+        <div class="category-text" id="mappedCategory">ממתין לפריט...</div>
+        <div class="raw-text" id="rawOutput">זיהוי גולמי: -</div>
+    </div>
+
+    <div class="toggle-container">
+        <span>📸 שמירה אוטומטית בזיהוי ודאי:</span>
+        <input type="checkbox" id="autoSaveToggle" style="transform: scale(1.3); cursor: pointer;">
+    </div>
+
+    <button id="manualSaveBtn">שמור תמונה נוכחית לגלריה</button>
+
+    <div class="log-box" id="log"></div>
+</div>
+
+<script>
+    const video = document.getElementById('webcam');
+    const loader = document.getElementById('loader');
+    const detectionArea = document.getElementById('detectionArea');
+    const mappedCategoryText = document.getElementById('mappedCategory');
+    const rawOutputText = document.getElementById('rawOutput');
+    const autoSaveToggle = document.getElementById('autoSaveToggle');
+    const manualSaveBtn = document.getElementById('manualSaveBtn');
+    const logBox = document.getElementById('log');
+
+    let model = null;
+    let lastSavedClass = "";
+    let lastSaveTime = 0;
+    const SAVE_COOLDOWN = 4000; // המתנה של 4 שניות בין שמירות אוטומטיות של אותו פריט
+
+    function writeLog(text) {
+        logBox.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${text}</div>`;
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // 1. הפעלת המצלמה האחורית
+    async function startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" },
+                audio: false
+            });
+            video.srcObject = stream;
+            video.style.display = "block";
+            writeLog("המצלמה הופעלה בהצלחה.");
+        } catch (err) {
+            writeLog("מנסה מצלמה קדמית או ברירת מחדל...");
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            video.srcObject = stream;
+            video.style.display = "block";
+        }
+    }
+
+    // 2. מיפוי קטגוריות גולמיות של Google לקטגוריות כביסה בעברית
+    function mapPredictionToLaundry(label) {
+        const l = label.toLowerCase();
+        
+        // חולצות ובגדים עליונים
+        if (l.includes('jersey') || l.includes('t-shirt') || l.includes('tee shirt') || 
+            l.includes('sweater') || l.includes('cardigan') || l.includes('sweatshirt') || 
+            l.includes('apron') || l.includes('pajama') || l.includes('poncho') || l.includes('stole')) {
+            return { name: "חולצה (Shirt)", key: "shirt" };
+        }
+        // מכנסיים
+        if (l.includes('jeans') || l.includes('denim') || l.includes('trousers') || l.includes('pants')) {
+            return { name: "מכנסיים (Pants)", key: "pants" };
+        }
+        // גרביים
+        if (l.includes('sock')) {
+            return { name: "גרביים (Socks)", key: "socks" };
+        }
+        // מגבות ובדים גדולים
+        if (l.includes('towel') || l.includes('toweling')) {
+            return { name: "מגבת (Towel)", key: "towel" };
+        }
+        
+        return { name: "לא זוהה כפריט כביסה", key: "other" };
+    }
+
+    // 3. טעינת המודל והרצתו
+    async function initAI() {
+        try {
+            // טעינת מודל MobileNet מ-TensorFlow.js
+            model = await mobilenet.load();
+            loader.style.display = "none";
+            detectionArea.style.display = "block";
+            writeLog("מודל ה-AI נטען בהצלחה! מתחיל סריקה.");
+            
+            // הפעלת לולאת הזיהוי
+            detectFrame();
+        } catch (err) {
+            writeLog("שגיאה בטעינת המודל: " + err.message);
+        }
+    }
+
+    async function detectFrame() {
+        if (!model) return;
+
+        try {
+            // קבלת זיהוי מהמצלמה
+            const predictions = await model.classify(video);
+            
+            if (predictions && predictions.length > 0) {
+                const topPrediction = predictions[0]; // הזיהוי בעל הסבירות הגבוהה ביותר
+                const rawName = topPrediction.className;
+                const probability = topPrediction.probability;
+
+                // עדכון התוצאות על המסך
+                rawOutputText.innerText = `זיהוי גולמי: ${rawName} (${(probability * 100).toFixed(0)}%)`;
+                
+                const laundryMatch = mapPredictionToLaundry(rawName);
+                mappedCategoryText.innerText = laundryMatch.name;
+
+                // צבע הכתב ישתנה לירוק רק אם הזיהוי של בגד ודאי
+                if (laundryMatch.key !== "other") {
+                    mappedCategoryText.style.color = "#16a34a"; // ירוק
+
+                    // 4. מנגנון שמירה אוטומטי
+                    if (autoSaveToggle.checked && probability > 0.40) { // 40% סבירות במודל כללי זה מספיק גבוה
+                        const now = Date.now();
+                        if (laundryMatch.key !== lastSavedClass || (now - lastSaveTime > SAVE_COOLDOWN)) {
+                            saveSnapshot(laundryMatch.key);
+                            lastSavedClass = laundryMatch.key;
+                            lastSaveTime = now;
+                        }
+                    }
+                } else {
+                    mappedCategoryText.style.color = "#64748b"; // אפור
+                }
+            }
+        } catch (e) {
+            // שגיאות זמניות כמו פריים ריק בטעינה
+        }
+
+        // בקשה לפריים הבא
+        requestAnimationFrame(detectFrame);
+    }
+
+    // 5. שמירת התמונה ישירות לגלריית המכשיר באנדרואיד
+    function saveSnapshot(label) {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const imageURL = canvas.toDataURL("image/jpeg");
+        const downloadLink = document.createElement('a');
+        downloadLink.href = imageURL;
+        
+        const timestamp = Date.now();
+        downloadLink.download = `${label}_${timestamp}.jpg`;
+        
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+        writeLog(`📸 נשמרה תמונה של: ${label}`);
+    }
+
+    // שמירה ידנית בלחיצת כפתור
+    manualSaveBtn.addEventListener('click', () => {
+        const currentLabel = mappedCategoryText.innerText.split(' ')[0] || "custom";
+        saveSnapshot(currentLabel);
+    });
+
+    window.onload = async () => {
+        await startCamera();
+        await initAI();
+    };
+</script>
+
+</body>
+</html>
