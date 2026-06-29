@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סורק כביסה - למידה עצמית וצילום רצף חכם</title>
+    <title>סורק כביסה - למידה עצמית קבועה</title>
     <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
@@ -144,7 +144,6 @@
             margin-top: 4px;
         }
 
-        /* מודאלים */
         .modal {
             display: none;
             position: absolute;
@@ -152,7 +151,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(15, 23, 42, 0.94);
+            background: rgba(15, 23, 42, 0.93);
             border-radius: 15px;
             z-index: 10;
             flex-direction: column;
@@ -203,20 +202,64 @@
             font-size: 0.8rem;
             margin-top: 15px;
         }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+        .btn-danger:hover { background: #b91c1c; }
+
+        .category-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .category-btn-group {
+            display: flex;
+            gap: 5px;
+        }
+        .manage-btn {
+            padding: 5px 9px;
+            font-size: 0.78rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: white;
+        }
+        .btn-reset-class { background: #f59e0b; } 
+        .btn-delete-class { background: #ef4444; } 
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>סורק כביסה - למידה עצמית וצילום רצף חכם</h1>
-    <p>כוון את העיגול האדום למרכז הבגד. המודל ילמד מהמשוב שלך!</p>
+    <h1>סורק כביסה - למידה עצמית קבועה</h1>
+    <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
-    <!-- מודאל למידה אקטיבי עם כפתורים דינמיים (10 שניות ללא זיהוי) -->
+    <!-- מודאל למידה אקטיבי עם כפתורים דינמיים -->
     <div id="manualModal" class="modal">
         <div class="modal-title">לא זוהה פריט ודאי. בחר קטגוריה ללימוד או הוסף חדשה:</div>
         <div class="modal-buttons" id="modalButtonsContainer">
             <!-- הכפתורים ייווצרו כאן באופן דינמי -->
         </div>
+    </div>
+
+    <!-- מודאל דינמי גדול עבור ספירת הדיליי וצילום הרצף המתוזמן -->
+    <div id="batchOverlay" class="modal">
+        <div id="batchOverlayTitle" class="modal-title" style="font-size: 1.4rem;">הכן את הבגד...</div>
+        <div id="batchOverlayCountdown" style="font-size: 4.5rem; font-weight: bold; color: #ef4444; margin: 15px 0;">3</div>
+        <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">הצילום יתחיל בקרוב, נא להזיז את החפץ בין הצילומים!</div>
     </div>
 
     <!-- מודאל חדש: הצעה לצילום רצף אוטומטי בעקבות זיהוי מוצלח -->
@@ -238,13 +281,6 @@
             <button class="modal-btn" style="background: #3b82f6;" onclick="saveSingleAutoShot()">שמור תמונה בודדת בלבד 📸</button>
             <button class="modal-btn" style="background: #ef4444;" onclick="closeAutoBatchModal()">ביטול / המשך לסרוק ❌</button>
         </div>
-    </div>
-
-    <!-- מודאל דינמי גדול עבור ספירת הדיליי וצילום הרצף המתוזמן -->
-    <div id="batchOverlay" class="modal">
-        <div id="batchOverlayTitle" class="modal-title" style="font-size: 1.3rem;">הכן את הבגד...</div>
-        <div id="batchOverlayCountdown" style="font-size: 4.5rem; font-weight: bold; color: #ef4444; margin: 15px 0;">3</div>
-        <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">נא למקם את פריט הלבוש מתחת לכוונת האדומה</div>
     </div>
 
     <div id="loader" class="loading-overlay">
@@ -330,8 +366,13 @@
     let countdownActive = false;
     const CONFIDENCE_THRESHOLD = 0.85; 
 
+    let lastLaundryDetectedTime = Date.now(); // משתנה למניעת איפוסי סרק
+
     // משתנה זמני לשמירת קטגוריה שזוהתה אוטומטית לטובת מודאל ההצעה
     let detectedCategoryForAutoBatch = "";
+
+    // משתני טיימר מתוזמן (צילום רצף) גלובליים למניעת באג לולאה אינסופית
+    let batchCaptureInterval = null; 
 
     let laundryCategories = [
         { key: "shirt", name: "חולצה (Shirt)", color: "#3b82f6" },
@@ -520,7 +561,7 @@
         });
 
         writeLog(`➕ נוספה קטגוריה חדשה לרשימה: ${sanitizedName}`);
-        speak(`נוספה קטגוריית ${sanitizedName}`);
+        speak("נוספה קטגוריה");
         
         renderModalButtons();
         saveModelAndCategories(); 
@@ -652,7 +693,7 @@
         runBatchCaptureProcess(total, category, delay);
     }
 
-    // תהליך צילום הרצף המתוזמן החדש (שלב אחר שלב - פותר את באג הידיים)
+    // תהליך צילום הרצף המתוזמן החדש (שלב אחר שלב)
     function runBatchCaptureProcess(total, category, delay) {
         isPaused = true; 
         timerOverlay.style.display = "none"; 
@@ -664,7 +705,7 @@
         captureStep(1, total, delay, category);
     }
 
-    // פונקציה רקורסיבית המנהלת ספירה לאחור ייעודית לפני *כל תמונה ותמונה* (השדרוג שלך!)
+    // פונקציה רקורסיבית המנהלת ספירה לאחור ייעודית לפני *כל תמונה ותמונה*
     function captureStep(index, total, delay, category) {
         const batchCounter = document.getElementById('batchOverlayCountdown');
         const batchTitle = document.getElementById('batchOverlayTitle');
@@ -717,10 +758,10 @@
         document.getElementById('batchOverlay').style.display = "none";
         secondsLeft = 10;
         isPaused = false;
-        renderModalButtons(); // מרענן את כמות התמונות בלוח הניהול
+        renderModalButtons(); 
     }
 
-    // לולאת הזיהוי
+    // לולאת הזיהוי (תיקון באג ה-1-class של ה-KNN)
     async function detectFrame() {
         if (!model || !knn || isPaused) {
             requestAnimationFrame(detectFrame);
@@ -734,7 +775,8 @@
             let probability = 0;
             let isKnnPrediction = false;
 
-            if (knn.getNumClasses() > 0) {
+            // א. בדיקה במודל הלמידה העצמית המקומי (חובה לפחות 2 קטגוריות שונות מאומנות כדי להבדיל ביניהן)
+            if (knn.getNumClasses() >= 2) {
                 const knnResult = await knn.predictClass(activation);
                 const topKnnClass = knnResult.label;
                 const knnConfidence = knnResult.confidences[topKnnClass];
@@ -746,6 +788,7 @@
                 }
             }
 
+            // ב. בדיקה במודל הכללי של גוגל
             if (predictedLabel === "other") {
                 const predictions = await model.classify(video);
                 if (predictions && predictions.length > 0) {
@@ -764,6 +807,7 @@
             activation.dispose();
 
             if (predictedLabel !== "other") {
+                lastLaundryDetectedTime = Date.now(); // עדכון זמן הזיהוי החיובי האחרון
                 resetCountdown(); 
                 
                 const hebrewName = getCategoryHebrewName(predictedLabel);
@@ -773,11 +817,11 @@
                 mappedCategoryText.style.color = isKnnPrediction ? "#3b82f6" : "#16a34a"; 
                 rawOutputText.innerText = `ודאות זיהוי: ${(probability * 100).toFixed(0)}%`;
 
-                // שדרוג: במקום צילום אוטומטי שקט, קופץ חלון המציע צילום רצף מתוזמן (השדרוג שלך!)
+                // מנגנון שמירה אוטומטי - פותח חלון הצעה מתוזמן חכם
                 if (autoSaveToggle.checked) {
                     const now = Date.now();
                     if (predictedLabel !== lastSavedClass) {
-                        lastSavedClass = predictedLabel; // נועל מיד למניעת לולאת חלונות קופצים
+                        lastSavedClass = predictedLabel; 
                         triggerAutoBatchModal(predictedLabel);
                     }
                 }
@@ -825,7 +869,7 @@
 
     // אפשרות במודאל לשמור רק תמונה בודדת
     function saveSingleAutoShot() {
-        saveSnapshot(detectedCategoryForBatch);
+        saveSnapshot(detectedCategoryForAutoBatch);
         speak("תמונה בודדת נשמרה");
         closeAutoBatchModal();
     }
@@ -837,7 +881,7 @@
         writeLog("חוזר לסריקה אוטומטית...");
     }
 
-    // מנגנון כשל ידני (אחרי 10 שניות ללא זיהוי)
+    // מנגנון כשל ידני
     function triggerManualFallback() {
         isPaused = true;
         timerOverlay.style.display = "none"; 
