@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סורק כביסה - למידה עצמית קבועה</title>
+    <title>סורק כביסה - למידה עצמית וחיפוש מקביל</title>
     <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
@@ -144,6 +144,7 @@
             margin-top: 4px;
         }
 
+        /* מודאלים */
         .modal {
             display: none;
             position: absolute;
@@ -151,7 +152,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(15, 23, 42, 0.93);
+            background: rgba(15, 23, 42, 0.94);
             border-radius: 15px;
             z-index: 10;
             flex-direction: column;
@@ -244,7 +245,7 @@
 <body>
 
 <div class="container">
-    <h1>סורק כביסה - למידה עצמית קבועה</h1>
+    <h1>סורק כביסה - למידה עצמית וחיפוש מקביל</h1>
     <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
     <!-- מודאל למידה אקטיבי עם כפתורים דינמיים -->
@@ -253,13 +254,6 @@
         <div class="modal-buttons" id="modalButtonsContainer">
             <!-- הכפתורים ייווצרו כאן באופן דינמי -->
         </div>
-    </div>
-
-    <!-- מודאל דינמי גדול עבור ספירת הדיליי וצילום הרצף המתוזמן -->
-    <div id="batchOverlay" class="modal">
-        <div id="batchOverlayTitle" class="modal-title" style="font-size: 1.4rem;">הכן את הבגד...</div>
-        <div id="batchOverlayCountdown" style="font-size: 4.5rem; font-weight: bold; color: #ef4444; margin: 15px 0;">3</div>
-        <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">הצילום יתחיל בקרוב, נא להזיז את החפץ בין הצילומים!</div>
     </div>
 
     <!-- מודאל חדש: הצעה לצילום רצף אוטומטי בעקבות זיהוי מוצלח -->
@@ -281,6 +275,13 @@
             <button class="modal-btn" style="background: #3b82f6;" onclick="saveSingleAutoShot()">שמור תמונה בודדת בלבד 📸</button>
             <button class="modal-btn" style="background: #ef4444;" onclick="closeAutoBatchModal()">ביטול / המשך לסרוק ❌</button>
         </div>
+    </div>
+
+    <!-- מודאל דינמי גדול עבור ספירת הדיליי וצילום הרצף המתוזמן -->
+    <div id="batchOverlay" class="modal">
+        <div id="batchOverlayTitle" class="modal-title" style="font-size: 1.4rem;">הכן את הבגד...</div>
+        <div id="batchOverlayCountdown" style="font-size: 4.5rem; font-weight: bold; color: #ef4444; margin: 15px 0;">3</div>
+        <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">הצילום יתחיל בקרוב, נא להזיז את החפץ בין הצילומים!</div>
     </div>
 
     <div id="loader" class="loading-overlay">
@@ -366,7 +367,7 @@
     let countdownActive = false;
     const CONFIDENCE_THRESHOLD = 0.85; 
 
-    let lastLaundryDetectedTime = Date.now(); // משתנה למניעת איפוסי סרק
+    let lastLaundryDetectedTime = Date.now(); 
 
     // משתנה זמני לשמירת קטגוריה שזוהתה אוטומטית לטובת מודאל ההצעה
     let detectedCategoryForAutoBatch = "";
@@ -761,7 +762,7 @@
         renderModalButtons(); 
     }
 
-    // לולאת הזיהוי (תיקון באג ה-1-class של ה-KNN)
+    // לולאת הזיהוי (כולל הרצה מקבילה של גוגל-MobileNet ועדכון הזיהוי הגולמי בכל פריים)
     async function detectFrame() {
         if (!model || !knn || isPaused) {
             requestAnimationFrame(detectFrame);
@@ -769,13 +770,33 @@
         }
 
         try {
-            const activation = model.infer(video, true);
-            
+            // א. הרצת זיהוי גולמי של גוגל (MobileNet) בכל פריים ועדכון יומן הגולמי
+            const predictions = await model.classify(video);
+            let googleLabel = "other";
+            let googleProb = 0;
+            let rawName = "-";
+
+            if (predictions && predictions.length > 0) {
+                const topPrediction = predictions[0];
+                rawName = `${topPrediction.className} (${(topPrediction.probability * 100).toFixed(0)}%)`;
+                
+                const laundryMatch = mapPredictionToLaundry(topPrediction.className);
+                if (laundryMatch.key !== "other" && topPrediction.probability >= CONFIDENCE_THRESHOLD) {
+                    googleLabel = laundryMatch.key;
+                    googleProb = topPrediction.probability;
+                }
+            }
+
+            // עדכון התצוגה הגולמית של גוגל תמיד (כמו שהיה בהתחלה!)
+            rawOutputText.innerText = `חיפוש בגוגל (גולמי): ${rawName}`;
+
+            // ב. בדיקה במודל הלמידה העצמית המקומי (חובה לפחות 2 קטגוריות שונות מאומנות כדי להבדיל ביניהן)
             let predictedLabel = "other";
             let probability = 0;
             let isKnnPrediction = false;
 
-            // א. בדיקה במודל הלמידה העצמית המקומי (חובה לפחות 2 קטגוריות שונות מאומנות כדי להבדיל ביניהן)
+            const activation = model.infer(video, true);
+
             if (knn.getNumClasses() >= 2) {
                 const knnResult = await knn.predictClass(activation);
                 const topKnnClass = knnResult.label;
@@ -788,24 +809,16 @@
                 }
             }
 
-            // ב. בדיקה במודל הכללי של גוגל
-            if (predictedLabel === "other") {
-                const predictions = await model.classify(video);
-                if (predictions && predictions.length > 0) {
-                    const topPrediction = predictions[0];
-                    const rawName = topPrediction.className;
-                    const rawProb = topPrediction.probability;
-                    const laundryMatch = mapPredictionToLaundry(rawName);
+            activation.dispose(); // שמירה על זיכרון המכשיר
 
-                    if (laundryMatch.key !== "other" && rawProb >= CONFIDENCE_THRESHOLD) {
-                        predictedLabel = laundryMatch.key;
-                        probability = rawProb;
-                    }
-                }
+            // ג. גיבוי במודל הכללי של גוגל (אם הלמידה העצמית לא מצאה משהו ודאי)
+            if (predictedLabel === "other") {
+                predictedLabel = googleLabel;
+                probability = googleProb;
+                isKnnPrediction = false;
             }
 
-            activation.dispose();
-
+            // ד. עדכון ממשק ושמירה
             if (predictedLabel !== "other") {
                 lastLaundryDetectedTime = Date.now(); // עדכון זמן הזיהוי החיובי האחרון
                 resetCountdown(); 
@@ -815,7 +828,9 @@
                 
                 mappedCategoryText.innerText = hebrewName + sourceInfo;
                 mappedCategoryText.style.color = isKnnPrediction ? "#3b82f6" : "#16a34a"; 
-                rawOutputText.innerText = `ודאות זיהוי: ${(probability * 100).toFixed(0)}%`;
+                
+                // הוספת אחוז ודאות בסוף הסטטוס
+                rawOutputText.innerText += ` | ודאות: ${(probability * 100).toFixed(0)}%`;
 
                 // מנגנון שמירה אוטומטי - פותח חלון הצעה מתוזמן חכם
                 if (autoSaveToggle.checked) {
@@ -828,7 +843,6 @@
             } else {
                 mappedCategoryText.innerText = "מחפש פריט ודאי (85% ומעלה)...";
                 mappedCategoryText.style.color = "#64748b";
-                rawOutputText.innerText = "ודאות זיהוי נמוכה";
                 
                 if (Date.now() - lastLaundryDetectedTime > 3000) {
                     lastSavedClass = "";
