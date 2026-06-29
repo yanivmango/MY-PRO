@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סורק כביסה - למידה עצמית וחיפוש מקביל</title>
-    <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier -->
+    <title>סורק כביסה - למידה עצמית ואיסוף נתונים לרובוטיקה</title>
+    <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier המעודכנות -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.4/dist/knn-classifier.min.js"></script>
@@ -97,11 +97,6 @@
             font-weight: bold;
             color: #16a34a;
             margin: 5px 0;
-        }
-
-        .raw-text {
-            font-size: 0.9rem;
-            color: #64748b;
         }
 
         .toggle-container {
@@ -245,7 +240,7 @@
 <body>
 
 <div class="container">
-    <h1>סורק כביסה - למידה עצמית וחיפוש מקביל</h1>
+    <h1>סורק כביסה - למידה עצמית ואיסוף נתונים</h1>
     <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
     <!-- מודאל למידה אקטיבי עם כפתורים דינמיים -->
@@ -256,7 +251,7 @@
         </div>
     </div>
 
-    <!-- מודאל חדש: הצעה לצילום רצף אוטומטי בעקבות זיהוי מוצלח -->
+    <!-- מודאל: הצעה לצילום רצף אוטומטי בעקבות זיהוי מוצלח -->
     <div id="autoBatchModal" class="modal">
         <div class="modal-title" id="autoBatchModalTitle">🎉 זוהה פריט כביסה!</div>
         <p style="color: #cbd5e1; margin-top: 0; font-size: 0.9rem;">האם ברצונך לצלם רצף תמונות שלו ללימוד מואץ?</p>
@@ -297,7 +292,6 @@
     <div class="detection-card" id="detectionArea" style="display: none;">
         <div>סטטוס זיהוי:</div>
         <div class="category-text" id="mappedCategory">ממתין לפריט...</div>
-        <div class="raw-text" id="rawOutput">זיהוי גולמי: -</div>
     </div>
 
     <div class="toggle-container">
@@ -345,7 +339,6 @@
     const loader = document.getElementById('loader');
     const detectionArea = document.getElementById('detectionArea');
     const mappedCategoryText = document.getElementById('mappedCategory');
-    const rawOutputText = document.getElementById('rawOutput');
     const autoSaveToggle = document.getElementById('autoSaveToggle');
     const manualModal = document.getElementById('manualModal');
     const autoBatchModal = document.getElementById('autoBatchModal');
@@ -495,6 +488,24 @@
             detectionArea.style.display = "block";
             writeLog("המערכת מוכנה לפעילות!");
             renderModalButtons(); 
+
+            // 🌱 כיול רקע אוטומטי חכם:
+            // אם המאגר ריק, נמתין שנייה וחצי ליציבות המצלמה, ונלמד אוטומטית 3 תמונות של הרקע הנוכחי
+            // זה מאפשר למערכת לזהות וללמוד בצורה מושלמת קטגוריה בודדת שהמשתמש יגדיר, מבלי להינעל עליה!
+            if (knn.getNumClasses() === 0) {
+                setTimeout(() => {
+                    try {
+                        for (let i = 0; i < 3; i++) {
+                            const activation = model.infer(video, true);
+                            knn.addExample(activation, '__background__');
+                        }
+                        writeLog("🌱 כיול רקע אוטומטי הושלם בהצלחה.");
+                    } catch (e) {
+                        console.log("Background seeding delayed");
+                    }
+                }, 1600);
+            }
+
             detectFrame();
         } catch (err) {
             writeLog("שגיאה באתחול: " + err.message);
@@ -762,7 +773,7 @@
         renderModalButtons(); 
     }
 
-    // לולאת הזיהוי (כולל הרצה מקבילה של גוגל-MobileNet ועדכון הזיהוי הגולמי בכל פריים)
+    // לולאת הזיהוי המשודרגת (למידה מקבילה חכמה, המונעת נעילת סרק)
     async function detectFrame() {
         if (!model || !knn || isPaused) {
             requestAnimationFrame(detectFrame);
@@ -770,16 +781,13 @@
         }
 
         try {
-            // א. הרצת זיהוי גולמי של גוגל (MobileNet) בכל פריים ועדכון יומן הגולמי
+            // א. הרצת זיהוי מקביל של גוגל (MobileNet) כגיבוי ברקע
             const predictions = await model.classify(video);
             let googleLabel = "other";
             let googleProb = 0;
-            let rawName = "-";
 
             if (predictions && predictions.length > 0) {
                 const topPrediction = predictions[0];
-                rawName = `${topPrediction.className} (${(topPrediction.probability * 100).toFixed(0)}%)`;
-                
                 const laundryMatch = mapPredictionToLaundry(topPrediction.className);
                 if (laundryMatch.key !== "other" && topPrediction.probability >= CONFIDENCE_THRESHOLD) {
                     googleLabel = laundryMatch.key;
@@ -787,29 +795,28 @@
                 }
             }
 
-            // עדכון התצוגה הגולמית של גוגל תמיד (כמו שהיה בהתחלה!)
-            rawOutputText.innerText = `חיפוש בגוגל (גולמי): ${rawName}`;
-
-            // ב. בדיקה במודל הלמידה העצמית המקומי (חובה לפחות 2 קטגוריות שונות מאומנות כדי להבדיל ביניהן)
+            // ב. הרצת מודל הלמידה העצמית המקומי (KNN)
             let predictedLabel = "other";
             let probability = 0;
             let isKnnPrediction = false;
 
             const activation = model.infer(video, true);
 
-            if (knn.getNumClasses() >= 2) {
+            // הפעלת ה-KNN - כעת הוא פועל גם אם יש רק קטגוריה אחת בזכות כיול הרקע האוטומטי!
+            if (knn.getNumClasses() > 0) {
                 const knnResult = await knn.predictClass(activation);
                 const topKnnClass = knnResult.label;
                 const knnConfidence = knnResult.confidences[topKnnClass];
 
-                if (knnConfidence >= CONFIDENCE_THRESHOLD && topKnnClass !== "other") {
+                // המערכת תזהה את הקטגוריה האישית שלך רק אם היא שונה מהרקע ("__background__")
+                if (topKnnClass !== "__background__" && knnConfidence >= CONFIDENCE_THRESHOLD) {
                     predictedLabel = topKnnClass;
                     probability = knnConfidence;
                     isKnnPrediction = true;
                 }
             }
 
-            activation.dispose(); // שמירה על זיכרון המכשיר
+            activation.dispose(); // שחרור זיכרון
 
             // ג. גיבוי במודל הכללי של גוגל (אם הלמידה העצמית לא מצאה משהו ודאי)
             if (predictedLabel === "other") {
@@ -828,9 +835,6 @@
                 
                 mappedCategoryText.innerText = hebrewName + sourceInfo;
                 mappedCategoryText.style.color = isKnnPrediction ? "#3b82f6" : "#16a34a"; 
-                
-                // הוספת אחוז ודאות בסוף הסטטוס
-                rawOutputText.innerText += ` | ודאות: ${(probability * 100).toFixed(0)}%`;
 
                 // מנגנון שמירה אוטומטי - פותח חלון הצעה מתוזמן חכם
                 if (autoSaveToggle.checked) {
