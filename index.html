@@ -51,22 +51,26 @@
     <h1>סורק כביסה - למידה עצמית ואיסוף נתונים</h1>
     <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
-    <!-- מודאל למידה אקטיבי עם כפתורים דינמיים וקנבס הקפאה (10 שניות ללא זיהוי) -->
+    <!-- מודאל למידה אקטיבי עם כפתורים דינמיים וקנבס הקפאה -->
     <div id="manualModal" class="modal">
         <div class="modal-title">לא זוהה פריט. הפריים הוקפא. בחר קטגוריה ללימוד:</div>
         <canvas id="modalCanvas" class="preview-canvas"></canvas>
         <div class="modal-buttons" id="modalButtonsContainer"></div>
     </div>
 
-    <!-- מודאל: הצעה לצילום רצף אוטומטי בעקבות זיהוי מוצלח (כולל תיבת הבחירה לשינוי הקטגוריה - תוקן!) -->
+    <!-- מודאל זיהוי אוטומטי המאפשר שינוי קטגוריה והוספת קטגוריות חדשות (שוחזר ושודרג!) -->
     <div id="autoBatchModal" class="modal">
         <div class="modal-title" id="autoBatchModalTitle">🎉 זוהה פריט כביסה!</div>
         <p style="color: #cbd5e1; margin-top: 0; font-size: 0.9rem;">האם ברצונך לצלם רצף תמונות שלו ללימוד מואץ?</p>
         
-        <!-- תיבת בחירת קטגוריה לתיקון מהיר בתוך הזיהוי האוטומטי (שוחזר ל-HTML - פותר את הבאג!) -->
-        <div style="margin-bottom: 12px; width: 100%; max-width: 320px; text-align: right;">
-            <label style="color: white; font-size: 0.85rem; font-weight: bold;">שנה קטגוריה (במידה והזיהוי שגוי):</label>
-            <select id="autoBatchCategorySelect" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-top: 4px; background: #f8fafc; color: #1e293b; font-weight: bold;"></select>
+        <!-- תיבת בחירה + כפתור הוספה ישיר בתוך חלונית הזיהוי המתוזמנת (הדרישה החדשה והמעולה שלך!) -->
+        <div style="margin-bottom: 12px; width: 100%; max-width: 320px; text-align: right; display: flex; gap: 8px; align-items: flex-end;">
+            <div style="flex: 1;">
+                <label style="color: white; font-size: 0.85rem; font-weight: bold;">שנה קטגוריה (במידה והזיהוי שגוי):</label>
+                <select id="autoBatchCategorySelect" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-top: 4px; background: #f8fafc; color: #1e293b; font-weight: bold;"></select>
+            </div>
+            <!-- כפתור הוספת קטגוריה חדשה מהירה מתוך חלונית הזיהוי האוטומטי (חדש!) -->
+            <button onclick="createNewCategoryFromAutoModal()" style="background: #475569; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">➕ חדשה...</button>
         </div>
 
         <div class="batch-grid" style="width: 100%; max-width: 320px; background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: right;">
@@ -93,7 +97,7 @@
         <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">הצילום יתחיל בקרוב, נא להזיז את החפץ בין הצילומים!</div>
     </div>
 
-    <div id="loader" class="loading-overlay">⏳ מאתחל מערכת בינה מלאכשית ולמידה עצמית...</div>
+    <div id="loader" class="loading-overlay">⏳ מאתחל מערכת בינה מלאכותית ולמידה עצמית...</div>
 
     <div class="video-container">
         <video id="webcam" autoplay playsinline muted style="display: none;"></video>
@@ -133,7 +137,7 @@
                 <select id="batchCategorySelect"></select>
             </div>
             <div>
-                <label interpreters for="batchCountInput">כמות תמונות:</label>
+                <label for="batchCountInput">כמות תמונות:</label>
                 <input type="number" id="batchCountInput" value="5" min="1" max="50">
             </div>
             <div style="grid-column: span 2;">
@@ -485,6 +489,36 @@
         saveModelAndCategories(); 
     }
 
+    // הוספת קטגוריה חדשה מהירה ישירות מתוך המודאל של הזיהוי האוטומטי (השדרוג המצוין החדש שלך!)
+    function createNewCategoryFromAutoModal() {
+        const rawName = prompt("הזן שם לקטגוריה החדשה (למשל: גרבי עבודה, צעיף משי):");
+        if (!rawName) return;
+
+        const sanitizedName = rawName.trim();
+        if (sanitizedName === "") return;
+
+        const key = "custom_" + sanitizedName.replace(/[^a-zA-Z0-9א-ת]/g, "_");
+
+        if (laundryCategories.some(cat => cat.key === key || cat.name.split(' ')[0] === sanitizedName)) {
+            alert("קטגוריה זו כבר קיימת ברשימה!");
+            return;
+        }
+
+        const randomColors = ["#06b6d4", "#ec4899", "#14b8a6", "#f43f5e", "#84cc16"];
+        const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
+
+        laundryCategories.push({ key: key, name: `${sanitizedName} (מותאם)`, color: randomColor });
+
+        writeLog(`➕ נוספה קטגוריה חדשה לרשימה מתוך חלונית הזיהוי: ${sanitizedName}`);
+        speak(`נוספה קטגוריית ${sanitizedName}`);
+        
+        renderModalButtons(); // מרענן את כל הממשקים
+        saveModelAndCategories(); 
+
+        // בחירה אוטומטית של הקטגוריה החדשה שיצרת בתוך הדרופדאון של מודאל הזיהוי המתוזמן
+        autoBatchCategorySelect.value = key;
+    }
+
     function renderCategoryManager() {
         if (!categoryManagerList) return;
         categoryManagerList.innerHTML = "";
@@ -807,9 +841,7 @@
         autoBatchModalTitle.innerText = `🎉 זוהה פריט: ${name}!`;
         speak(`זוהה פריט ${name}. האם לצלם רצף?`);
         
-        // הגדרת קטגוריית ברירת המחדל בתיבת הבחירה של מודאל הזיהוי האוטומטי 
         autoBatchCategorySelect.value = category;
-        
         autoBatchModal.style.display = "flex";
     }
 
