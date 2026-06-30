@@ -99,6 +99,11 @@
             margin: 5px 0;
         }
 
+        .raw-text {
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
         .toggle-container {
             display: flex;
             justify-content: space-between;
@@ -241,7 +246,7 @@
 <body>
 
 <div class="container">
-    <h1>סורק כביסה - למידה עצמית ואיסוף נתונים</h1>
+    <h1>סורק כביסה - למידה עצמית וצילום רצף חכם</h1>
     <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
     <!-- מודאל למידה אקטיבי עם כפתורים דינמיים -->
@@ -293,6 +298,8 @@
     <div class="detection-card" id="detectionArea" style="display: none;">
         <div>סטטוס זיהוי:</div>
         <div class="category-text" id="mappedCategory">ממתין לפריט...</div>
+        <!-- חלון הזיהוי הגולמי של גוגל מוחזר לפעילות מלאה בשידור חי -->
+        <div class="raw-text" id="rawOutput">חיפוש בגוגל (גולמי): -</div>
     </div>
 
     <div class="toggle-container">
@@ -344,6 +351,7 @@
     const loader = document.getElementById('loader');
     const detectionArea = document.getElementById('detectionArea');
     const mappedCategoryText = document.getElementById('mappedCategory');
+    const rawOutputText = document.getElementById('rawOutput');
     const autoSaveToggle = document.getElementById('autoSaveToggle');
     const manualModal = document.getElementById('manualModal');
     const autoBatchModal = document.getElementById('autoBatchModal');
@@ -370,7 +378,7 @@
     // משתנה זמני לשמירת קטגוריה שזוהתה אוטומטית לטובת מודאל ההצעה
     let detectedCategoryForAutoBatch = "";
 
-    // משתני טיימר מתוזמן (צילום רצף) גלובליים למניעת באג לולאה אינסופית
+    // משתני טיימר מתוזמן (צילום רצף) גלובליים
     let batchCaptureInterval = null; 
 
     let laundryCategories = [
@@ -393,7 +401,7 @@
         }
     }
 
-    // הפעלת מצלמה
+    // הפעלת מצלמה בטוחה ויציבה
     async function startCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -401,39 +409,22 @@
                 audio: false
             });
             video.srcObject = stream;
-            video.style.display = "block";
-            targetDot.style.display = "block";
-            timerOverlay.style.display = "block";
-
-            // פותר את בעיית מרוץ הזמנים: כיול רקע אוטומטי מתרחש אך ורק לאחר שהווידאו ממש מנגן בפועל!
-            video.onplaying = () => {
-                setTimeout(() => {
-                    const classCounts = knn ? knn.getClassExampleCount() : {};
-                    if (!classCounts['__background__'] || classCounts['__background__'] === 0) {
-                        calibrateBackground();
-                    }
-                }, 1500); // השהיה קלה לייצוב החשיפה והפוקוס של עדשת המצלמה
-            };
-
         } catch (err) {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            video.srcObject = stream;
-            video.style.display = "block";
-            targetDot.style.display = "block";
-            timerOverlay.style.display = "block";
-
-            video.onplaying = () => {
-                setTimeout(() => {
-                    const classCounts = knn ? knn.getClassExampleCount() : {};
-                    if (!classCounts['__background__'] || classCounts['__background__'] === 0) {
-                        calibrateBackground();
-                    }
-                }, 1500);
-            };
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                video.srcObject = stream;
+            } catch (e) {
+                writeLog("❌ שגיאה: לא נמצאה מצלמה זמינה.");
+                alert("לא ניתן לגשת למצלמה. אנא ודא שאישרת הרשאות מצלמה בדפדפן.");
+                return;
+            }
         }
+        video.style.display = "block";
+        targetDot.style.display = "block";
+        timerOverlay.style.display = "block";
     }
 
-    // פונקציית כיול רקע (שולחן ריק) ידנית או אוטומטית (פותרת את בעיית הנעילה לחלוטין)
+    // פונקציית כיול רקע (שולחן ריק) ידנית (פותרת את בעיית הנעילה לחלוטין)
     function calibrateBackground() {
         if (!model || !knn || isPaused) {
             writeLog("⚠️ לא ניתן לכייל רקע כעת (המערכת בהשהיה/טעינה).");
@@ -584,7 +575,6 @@
         renderCategoryManager();
     }
 
-    // הוספת קטגוריה חדשה מהירה (לדרישתך)
     function createNewCategory() {
         const rawName = prompt("הזן שם לקטגוריה החדשה (למשל: צעיף, תחתונים, נעליים):");
         if (!rawName) return;
@@ -733,78 +723,80 @@
 
     // מנגנון צילום רצף מתוזמן חכם
     function startTimedBatch() {
-        const delay = parseInt(document.getElementById('batchDelayInput').value) || 0;
-        const total = parseInt(document.getElementById('batchCountInput').value) || 10;
+        const delay = parseInt(document.getElementById('batchDelayInput').value) || 3;
+        const total = parseInt(document.getElementById('batchCountInput').value) || 5;
         const category = batchCategorySelect.value;
 
+        // הפעלת התהליך השלבי
+        runBatchCaptureProcess(total, category, delay);
+    }
+
+    // תהליך צילום הרצף המתוזמן החדש (שלב אחר שלב)
+    function runBatchCaptureProcess(total, category, delay) {
         isPaused = true; 
         timerOverlay.style.display = "none"; 
 
         const batchOverlay = document.getElementById('batchOverlay');
-        const batchTitle = document.getElementById('batchOverlayTitle');
+        batchOverlay.style.display = "flex";
+
+        // הפעלת צילום התמונה הראשונה בסדרה
+        captureStep(1, total, delay, category);
+    }
+
+    // פונקציה רקורסיבית המנהלת ספירה לאחור ייעודית לפני *כל תמונה ותמונה*
+    function captureStep(index, total, delay, category) {
         const batchCounter = document.getElementById('batchOverlayCountdown');
+        const batchTitle = document.getElementById('batchOverlayTitle');
         const batchSub = document.getElementById('batchOverlaySub');
 
-        batchOverlay.style.display = "flex";
-        batchTitle.innerText = `הכן את הבגד עבור קטגוריית: ${getCategoryHebrewName(category)}`;
-        batchSub.innerText = "נא למקם את פריט הלבוש מתחת לכוונת האדומה";
+        batchTitle.innerText = `צילום תמונה ${index} מתוך ${total}`;
+        batchSub.innerText = "הכן את הבגד מול הכוונת והרחק את הידיים!";
 
-        let currentDelay = delay;
-        batchCounter.innerText = currentDelay;
-        speak(`צילום הרצף יתחיל בעוד ${currentDelay}`);
+        let secondsRemaining = delay;
+        batchCounter.innerText = secondsRemaining;
+        speak(secondsRemaining.toString());
 
-        const delayTimer = setInterval(() => {
-            currentDelay--;
-            if (currentDelay > 0) {
-                batchCounter.innerText = currentDelay;
-                speak(currentDelay.toString());
+        // טיימר ייחודי של שנייה-שנייה עבור התמונה הנוכחית בסדרה
+        let stepInterval = setInterval(() => {
+            secondsRemaining--;
+            if (secondsRemaining > 0) {
+                batchCounter.innerText = secondsRemaining;
+                speak(secondsRemaining.toString());
             } else {
-                clearInterval(delayTimer);
-                runBatchCaptureProcess(total, category);
+                clearInterval(stepInterval);
+                
+                // הדיליי הסתיים - מבצעים את הצילום והאימון ברגע זה!
+                saveSnapshot(`batch_${category}`);
+                
+                const activation = model.infer(video, true);
+                knn.addExample(activation, category);
+                
+                writeLog(`🧠 למידה מואצת: אומנה דוגמה מספר ${index}/${total} עבור: ${getCategoryHebrewName(category)}`);
+                speak("צולַם");
+
+                // בדיקה אם נשארו עוד תמונות לצלם בסדרה
+                if (index < total) {
+                    // מעבר לתמונה הבאה לאחר חצי שנייה של הפסקה קלה
+                    setTimeout(() => {
+                        captureStep(index + 1, total, delay, category);
+                    }, 500);
+                } else {
+                    // כל התמונות צולמו בהצלחה!
+                    finishBatchCapture(total);
+                }
             }
         }, 1000);
     }
 
-    // תהליך צילום הרצף בפועל והאימון המהיר
-    function runBatchCaptureProcess(total, category) {
-        const batchCounter = document.getElementById('batchOverlayCountdown');
-        const batchTitle = document.getElementById('batchOverlayTitle');
-        const batchSub = document.getElementById('batchOverlaySub');
+    function finishBatchCapture(total) {
+        speak("צילום הרצף הושלם בהצלחה");
+        writeLog(`✅ צילום רצף מתוזמן הושלם: נשמרו ואומנו ${total} תמונות בגלריה.`);
+        saveModelAndCategories();
 
-        batchTitle.innerText = "מצלם ומאמן את המודל ברצף...";
-        batchSub.innerText = "נא לסובב/להזיז את הבגד מול המצלמה לקבלת זוויות מגוונות!";
-        
-        let capturedCount = 0;
-        batchCounter.innerText = `${capturedCount} / ${total}`;
-
-        if (batchCaptureInterval) clearInterval(batchCaptureInterval);
-
-        batchCaptureInterval = setInterval(() => {
-            capturedCount++;
-            batchCounter.innerText = `${capturedCount} / ${total}`;
-
-            saveSnapshot(`batch_${category}`);
-
-            const activation = model.infer(video, true);
-            knn.addExample(activation, category);
-
-            writeLog(`🧠 למידה מואצת: אומנה דוגמה מספר ${capturedCount} עבור: ${getCategoryHebrewName(category)}`);
-
-            if (capturedCount >= total) {
-                clearInterval(batchCaptureInterval);
-                batchCaptureInterval = null;
-                
-                speak("צילום הרצף הושלם בהצלחה");
-                writeLog(`✅ צילום רצף מתוזמן הושלם: נשמרו ואומנו ${total} תמונות בגלריה.`);
-                
-                saveModelAndCategories(); 
-
-                document.getElementById('batchOverlay').style.display = "none";
-                secondsLeft = 10;
-                isPaused = false;
-                renderModalButtons(); 
-            }
-        }, 1200);
+        document.getElementById('batchOverlay').style.display = "none";
+        secondsLeft = 10;
+        isPaused = false;
+        renderModalButtons(); 
     }
 
     // לולאת הזיהוי המשודרגת (כולל הרצה מקבילה של גוגל-MobileNet)
@@ -825,15 +817,21 @@
             const predictions = await model.classify(video);
             let googleLabel = "other";
             let googleProb = 0;
+            let rawName = "-";
 
             if (predictions && predictions.length > 0) {
                 const topPrediction = predictions[0];
+                rawName = `${topPrediction.className} (${(topPrediction.probability * 100).toFixed(0)}%)`;
+                
                 const laundryMatch = mapPredictionToLaundry(topPrediction.className);
                 if (laundryMatch.key !== "other" && topPrediction.probability >= CONFIDENCE_THRESHOLD) {
                     googleLabel = laundryMatch.key;
                     googleProb = topPrediction.probability;
                 }
             }
+
+            // עדכון חלון הזיהוי הגולמי של גוגל תמיד (בשידור חי)
+            rawOutputText.innerText = `חיפוש בגוגל (גולמי): ${rawName}`;
 
             // ב. הרצת מודל הלמידה העצמית המקומי (KNN)
             // מוגדר על K=1 לזיהוי מהיר ומדויק מהתמונה הראשונה, ונמנע מנעילה תודות לכיול הרקע הזורם
@@ -891,6 +889,45 @@
         } catch (e) {}
 
         requestAnimationFrame(detectFrame);
+    }
+
+    // מנגנון הצעה אוטומטי - פתיחת מודאל הצעה לצילום רצף בזיהוי מוצלח
+    function triggerAutoBatchModal(category) {
+        isPaused = true; 
+        timerOverlay.style.display = "none";
+        
+        detectedCategoryForAutoBatch = category;
+        const name = getCategoryHebrewName(category);
+        
+        autoBatchModalTitle.innerText = `🎉 זוהה פריט: ${name}!`;
+        speak(`זוהה פריט ${name}. האם לצלם רצף?`);
+        
+        autoBatchModal.style.display = "flex";
+    }
+
+    // אישור המודאל האוטומטי והפעלת צילום הרצף המתוזמן
+    function confirmAutoBatch() {
+        const total = parseInt(document.getElementById('autoBatchCount').value) || 5;
+        const delay = parseInt(document.getElementById('autoBatchDelay').value) || 3;
+        
+        document.getElementById('autoBatchModal').style.display = "none";
+        
+        // מפעיל את הרצף המתוזמן עם ספירה לאחור לפני כל תמונה!
+        runBatchCaptureProcess(total, detectedCategoryForAutoBatch, delay);
+    }
+
+    // אפשרות במודאל לשמור רק תמונה בודדת
+    function saveSingleAutoShot() {
+        saveSnapshot(detectedCategoryForAutoBatch);
+        speak("תמונה בודדת נשמרה");
+        closeAutoBatchModal();
+    }
+
+    function closeAutoBatchModal() {
+        document.getElementById('autoBatchModal').style.display = "none";
+        secondsLeft = 10;
+        isPaused = false;
+        writeLog("חוזר לסריקה אוטומטית...");
     }
 
     // מנגנון כשל ידני
