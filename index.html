@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>סורק כביסה - למידה עצמית ואיסוף נתונים לרובוטיקה</title>
-    <!-- טעינת ספריות TensorFlow.js, MobileNet ו-KNN Classifier המעודכנות -->
+    <!-- טעינת ספריות TensorFlow.js, MobileNet, KNN Classifier ו-COCO-SSD המעודכנות -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.4/dist/knn-classifier.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
     
     <style>
         body {
@@ -90,18 +91,27 @@
             border-radius: 10px;
             margin: 15px 0;
             border: 1.5px solid #cbd5e1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            text-align: right;
         }
 
         .category-text {
-            font-size: 1.5rem;
+            font-size: 1.4rem;
             font-weight: bold;
             color: #16a34a;
             margin: 5px 0;
         }
 
-        .raw-text {
-            font-size: 0.9rem;
-            color: #64748b;
+        .wiki-image {
+            width: 80px;
+            height: 80px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 1.5px solid #cbd5e1;
+            background: #e2e8f0;
+            display: none;
         }
 
         .toggle-container {
@@ -144,7 +154,6 @@
             margin-top: 4px;
         }
 
-        /* מודאלים */
         .modal {
             display: none;
             position: absolute;
@@ -191,6 +200,17 @@
         }
         .modal-btn:active { opacity: 0.8; }
 
+        /* קנבס להצגת פריים קפוא מתוייג */
+        .preview-canvas {
+            width: 120px;
+            height: 90px;
+            border-radius: 8px;
+            border: 1.5px solid #38bdf8;
+            margin-bottom: 10px;
+            object-fit: cover;
+            background: #000;
+        }
+
         .log-box {
             background: #0f172a;
             color: #38bdf8;
@@ -218,7 +238,6 @@
         }
         .btn-danger:hover { background: #b91c1c; }
 
-        /* לוח ניהול זיכרון וקטגוריות */
         .category-row {
             display: flex;
             justify-content: space-between;
@@ -249,9 +268,10 @@
     <h1>סורק כביסה - למידה עצמית ואיסוף נתונים</h1>
     <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
-    <!-- מודאל למידה אקטיבי עם כפתורים דינמיים -->
+    <!-- מודאל למידה אקטיבי עם כפתורים דינמיים וקנבס הקפאה (10 שניות ללא זיהוי) -->
     <div id="manualModal" class="modal">
-        <div class="modal-title">לא זוהה פריט ודאי. בחר קטגוריה ללימוד או הוסף חדשה:</div>
+        <div class="modal-title">לא זוהה פריט. הפריים הוקפא. בחר קטגוריה ללימוד:</div>
+        <canvas id="modalCanvas" class="preview-canvas"></canvas>
         <div class="modal-buttons" id="modalButtonsContainer">
             <!-- הכפתורים ייווצרו כאן באופן דינמי -->
         </div>
@@ -282,7 +302,7 @@
     <div id="batchOverlay" class="modal">
         <div id="batchOverlayTitle" class="modal-title" style="font-size: 1.4rem;">הכן את הבגד...</div>
         <div id="batchOverlayCountdown" style="font-size: 4.5rem; font-weight: bold; color: #ef4444; margin: 15px 0;">3</div>
-        <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">הצילום יתחיל בקרוב, נא להזיז את החפץ בין הצילומים!</div>
+        <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">נא למקם את פריט הלבוש מתחת לכוונת האדומה</div>
     </div>
 
     <div id="loader" class="loading-overlay">
@@ -296,10 +316,13 @@
     </div>
     
     <div class="detection-card" id="detectionArea" style="display: none;">
-        <div>סטטוס זיהוי:</div>
-        <div class="category-text" id="mappedCategory">ממתין לפריט...</div>
-        <!-- חלון הזיהוי הגולמי של גוגל מתעדכן בשידור חי -->
-        <div class="raw-text" id="rawOutput">חיפוש בגוגל (גולמי): -</div>
+        <div style="flex: 1;">
+            <div>סטטוס זיהוי:</div>
+            <div class="category-text" id="mappedCategory">ממתין לפריט...</div>
+            <div style="font-size: 0.85rem; color: #64748b;" id="rawOutput">חיפוש בגוגל (גולמי): -</div>
+        </div>
+        <!-- תמונת השוואה מוויקיפדיה למניעת בלבול (שדרוג ב') -->
+        <img id="wikiRefImg" class="wiki-image" src="" alt="Wikipedia Reference">
     </div>
 
     <div class="toggle-container">
@@ -352,8 +375,10 @@
     const detectionArea = document.getElementById('detectionArea');
     const mappedCategoryText = document.getElementById('mappedCategory');
     const rawOutputText = document.getElementById('rawOutput');
+    const wikiRefImg = document.getElementById('wikiRefImg');
     const autoSaveToggle = document.getElementById('autoSaveToggle');
     const manualModal = document.getElementById('manualModal');
+    const modalCanvas = document.getElementById('modalCanvas');
     const autoBatchModal = document.getElementById('autoBatchModal');
     const autoBatchModalTitle = document.getElementById('autoBatchModalTitle');
     const modalButtonsContainer = document.getElementById('modalButtonsContainer');
@@ -362,6 +387,7 @@
     const logBox = document.getElementById('log');
 
     let model = null;
+    let cocoModel = null; // מודל זיהוי האובייקטים וחיתוך הרקע (שדרוג א')
     let knn = null; 
     let isPaused = false;
     let lastSavedClass = "";
@@ -377,6 +403,9 @@
 
     // משתנה זמני לשמירת קטגוריה שזוהתה אוטומטית לטובת מודאל ההצעה
     let detectedCategoryForAutoBatch = "";
+
+    // משתנה לשמירת הפריים שהוקפא בכשל ידני (מונע צילום ידיים!)
+    let frozenCanvas = null;
 
     // משתני טיימר מתוזמן (צילום רצף) גלובליים
     let batchCaptureInterval = null; 
@@ -401,7 +430,7 @@
         }
     }
 
-    // הפעלת מצלמה בטוחה ויציבה
+    // הפעלת מצלמה
     async function startCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -422,19 +451,9 @@
         video.style.display = "block";
         targetDot.style.display = "block";
         timerOverlay.style.display = "block";
-
-        // פותר את בעיית מרוץ הזמנים: כיול רקע אוטומטי מתרחש אך ורק לאחר שהווידאו ממש מנגן בפועל!
-        video.onplaying = () => {
-            setTimeout(() => {
-                const classCounts = knn ? knn.getClassExampleCount() : {};
-                if (!classCounts['__background__'] || classCounts['__background__'] === 0) {
-                    calibrateBackground();
-                }
-            }, 1500); // השהיה קלה לייצוב החשיפה והפוקוס של עדשת המצלמה
-        };
     }
 
-    // פונקציית כיול רקע (שולחן ריק) ידנית או אוטומטית (פותרת את בעיית הנעילה לחלוטין)
+    // פונקציית כיול רקע (שולחן ריק) ידנית (פותרת את בעיית הנעילה לחלוטין)
     function calibrateBackground() {
         if (!model || !knn || isPaused) {
             writeLog("⚠️ לא ניתן לכייל רקע כעת (המערכת בהשהיה/טעינה).");
@@ -442,12 +461,10 @@
         }
         
         try {
-            // ניקוי דוגמאות רקע קודמות אם היו קיימות
             try {
                 knn.clearClass('__background__');
             } catch(e) {}
 
-            // לומד 5 פריימים מהירים של הרקע הנוכחי
             for (let i = 0; i < 5; i++) {
                 const activation = model.infer(video, true);
                 knn.addExample(activation, '__background__');
@@ -462,31 +479,56 @@
         }
     }
 
-    // פונקציה המחשבת דמיון מתמטי אמיתי (Cosine Similarity) של פריים המצלמה מול התמונות שצילמת (פותרת את בעיית הנעילה)
+    // שליפת תמונת אימות אמיתית מוויקיפדיה ללא מפתח API (שדרוג ב')
+    async function fetchWikiReferenceImage(categoryName) {
+        try {
+            // תרגום מפתח או שם בסיסי לחיפוש
+            let searchLabel = categoryName.split(' ')[0].replace(/[()]/g, '').trim();
+            if (searchLabel === "shirt" || searchLabel === "חולצה") searchLabel = "T-shirt";
+            if (searchLabel === "pants" || searchLabel === "מכנסיים") searchLabel = "Trousers";
+            if (searchLabel === "socks" || searchLabel === "גרביים") searchLabel = "Sock";
+            if (searchLabel === "towel" || searchLabel === "מגבת") searchLabel = "Towel";
+
+            const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(searchLabel)}&prop=pageimages&format=json&pithumbsize=150&origin=*`;
+            const res = await fetch(url);
+            const data = await res.json();
+            const pages = data.query.pages;
+            const pageId = Object.keys(pages)[0];
+            if (pageId !== "-1" && pages[pageId].thumbnail) {
+                wikiRefImg.src = pages[pageId].thumbnail.source;
+                wikiRefImg.style.display = "block";
+                return;
+            }
+        } catch (e) {
+            console.log("Wiki fetch failed: ", e);
+        }
+        wikiRefImg.style.display = "none";
+    }
+
+    // מנגנון חישוב דמיון קוסינוסי קשיח למניעת נעילות סרק (שדרוג ג')
     async function getKnnSimilarity(activation) {
         const dataset = knn.getClassifierDataset();
         let maxSim = 0;
         let bestLabel = "other";
 
         try {
-            // queryNorm = activation / ||activation|| (נרמול וקטור השאילתה)
+            // נרמל את וקטור השאילתה הנוכחי
             const queryNorm = tf.div(activation, tf.norm(activation));
 
             for (const [label, classTensor] of Object.entries(dataset)) {
                 if (label === '__background__') continue;
 
-                // חישוב נרמול עבור כל דוגמה ששמרת בבסיס הנתונים
+                // נרמל את כל וקטורי הדוגמאות השמורות בקלאס זה
                 const norms = tf.norm(classTensor, 'euclidean', 1, true);
                 const normalizedClassTensor = tf.div(classTensor, norms);
 
-                // מכפלת נקודה בין הוקטורים המנורמלים כדי לחשב דמיון קוסינוס (מ-0 ל-1)
+                // חישוב המכפלה הסקלרית (קוסינוס דמיון)
                 const similarities = tf.matMul(queryNorm, normalizedClassTensor, false, true);
                 
-                // מציאת הדמיון הגבוה ביותר בקבוצה זו
                 const maxClassSimTensor = tf.max(similarities);
                 const maxClassSim = (await maxClassSimTensor.data())[0];
 
-                // שחרור זיכרון טנזורים מיידי
+                // שחרור טנזורים זמניים למניעת קריסות דפדפן
                 norms.dispose();
                 normalizedClassTensor.dispose();
                 similarities.dispose();
@@ -499,7 +541,7 @@
             }
             queryNorm.dispose();
         } catch (err) {
-            console.error("Error in similarity calculation", err);
+            console.error("Cosine calculations error: ", err);
         }
 
         return { label: bestLabel, similarity: maxSim };
@@ -564,6 +606,7 @@
             }
 
             model = await mobilenet.load();
+            cocoModel = await cocoSsd.load(); // טוען את מודל זיהוי האובייקטים (שדרוג א')
             knn = knnClassifier.create();
 
             const savedKnnDataset = localStorage.getItem('knnDataset');
@@ -582,7 +625,7 @@
             }
 
             loader.style.display = "none";
-            detectionArea.style.display = "block";
+            detectionArea.style.display = "flex";
             writeLog("המערכת מוכנה לפעילות!");
             renderModalButtons(); 
             detectFrame();
@@ -608,22 +651,6 @@
             opt.innerText = cat.name.split(' ')[0];
             batchCategorySelect.appendChild(opt);
         });
-
-        const addNewBtn = document.createElement('button');
-        addNewBtn.className = "modal-btn";
-        addNewBtn.style.background = "#475569"; 
-        addNewBtn.style.gridColumn = "span 2";
-        addNewBtn.innerText = "➕ קטגוריה חדשה...";
-        addNewBtn.onclick = createNewCategory;
-        modalButtonsContainer.appendChild(addNewBtn);
-
-        const cancelBtn = document.createElement('button');
-        cancelBtn.className = "modal-btn";
-        cancelBtn.style.background = "#ef4444"; 
-        cancelBtn.style.gridColumn = "span 2";
-        cancelBtn.innerText = "ביטול / חזרה לסריקה";
-        cancelBtn.onclick = closeManualModal;
-        modalButtonsContainer.appendChild(cancelBtn);
 
         renderCategoryManager();
     }
@@ -774,13 +801,12 @@
         timerOverlay.innerText = `🕒 זיהוי נעול`;
     }
 
-    // מנגנון צילום רצף מתוזמן חכם
+    // מנגנון הפעלת צילום רצף ידני מתוך פנל השליטה
     function startTimedBatch() {
         const delay = parseInt(document.getElementById('batchDelayInput').value) || 3;
         const total = parseInt(document.getElementById('batchCountInput').value) || 5;
         const category = batchCategorySelect.value;
 
-        // הפעלת התהליך השלבי
         runBatchCaptureProcess(total, category, delay);
     }
 
@@ -792,7 +818,6 @@
         const batchOverlay = document.getElementById('batchOverlay');
         batchOverlay.style.display = "flex";
 
-        // הפעלת צילום התמונה הראשונה בסדרה
         captureStep(1, total, delay, category);
     }
 
@@ -809,8 +834,7 @@
         batchCounter.innerText = secondsRemaining;
         speak(secondsRemaining.toString());
 
-        // טיימר ייחודי של שנייה-שנייה עבור התמונה הנוכחית בסדרה
-        let stepInterval = setInterval(() => {
+        let stepInterval = setInterval(async () => {
             secondsRemaining--;
             if (secondsRemaining > 0) {
                 batchCounter.innerText = secondsRemaining;
@@ -818,23 +842,36 @@
             } else {
                 clearInterval(stepInterval);
                 
-                // הדיליי הסתיים - מבצעים את הצילום והאימון ברגע זה!
-                saveSnapshot(`batch_${category}`);
+                // הדיליי הסתיים - מבצעים חיתוך וזיהוי חכם ברגע הצילום (שדרוג א')
+                let captureCanvas = video;
+                try {
+                    const cocoPred = await cocoModel.detect(video);
+                    const targetObj = cocoPred.find(p => p.class !== 'person' && p.score > 0.40);
+                    if (targetObj) {
+                        const [x, y, w, h] = targetObj.bbox;
+                        const cropCanvas = document.createElement('canvas');
+                        cropCanvas.width = w;
+                        cropCanvas.height = h;
+                        const cropCtx = cropCanvas.getContext('2d');
+                        cropCtx.drawImage(video, x, y, w, h, 0, 0, w, h);
+                        captureCanvas = cropCanvas;
+                        writeLog("✂️ האובייקט נחתך ונוקה מרקע השולחן בהצלחה!");
+                    }
+                } catch(e) {}
+
+                saveSnapshot(`batch_${category}`, captureCanvas);
                 
-                const activation = model.infer(video, true);
+                const activation = model.infer(captureCanvas, true);
                 knn.addExample(activation, category);
                 
                 writeLog(`🧠 למידה מואצת: אומנה דוגמה מספר ${index}/${total} עבור: ${getCategoryHebrewName(category)}`);
                 speak("צולַם");
 
-                // בדיקה אם נשארו עוד תמונות לצלם בסדרה
                 if (index < total) {
-                    // מעבר לתמונה הבאה לאחר חצי שנייה של הפסקה קלה
                     setTimeout(() => {
                         captureStep(index + 1, total, delay, category);
                     }, 500);
                 } else {
-                    // כל התמונות צולמו בהצלחה!
                     finishBatchCapture(total);
                 }
             }
@@ -852,22 +889,31 @@
         renderModalButtons(); 
     }
 
-    // לולאת הזיהוי המשודרגת (הכוללת סריקה מקבילית וסינון קוסינוס חכם)
+    // לולאת הזיהוי המשודרגת (זיהוי קוסינוסי + חיתוך אובייקטים COCO-SSD)
     async function detectFrame() {
-        if (!model || !knn || isPaused) {
+        if (!model || !knn || !cocoModel || isPaused) {
             requestAnimationFrame(detectFrame);
             return;
         }
 
         try {
-            const activation = model.infer(video, true);
-            
-            let predictedLabel = "other";
-            let probability = 0;
-            let isKnnPrediction = false;
+            // א. הרצת COCO-SSD לטובת חיתוך אובייקטים מהיר (שדרוג א')
+            const cocoPred = await cocoModel.detect(video);
+            let activeCanvas = video; // ברירת מחדל פריים מלא
 
-            // א. הרצת זיהוי גוגל (MobileNet) כגיבוי ברקע בשידור חי
-            const predictions = await model.classify(video);
+            const targetObj = cocoPred.find(p => p.class !== 'person' && p.score > 0.40);
+            if (targetObj) {
+                const [x, y, w, h] = targetObj.bbox;
+                const cropCanvas = document.createElement('canvas');
+                cropCanvas.width = w;
+                cropCanvas.height = h;
+                const cropCtx = cropCanvas.getContext('2d');
+                cropCtx.drawImage(video, x, y, w, h, 0, 0, w, h);
+                activeCanvas = cropCanvas;
+            }
+
+            // ב. הרצת זיהוי גוגל (MobileNet) כגיבוי מקבילי
+            const predictions = await model.classify(activeCanvas);
             let googleLabel = "other";
             let googleProb = 0;
             let rawName = "-";
@@ -883,34 +929,39 @@
                 }
             }
 
-            // עדכון חלון הזיהוי הגולמי של גוגל תמיד (בשידור חי)
             rawOutputText.innerText = `חיפוש בגוגל (גולמי): ${rawName}`;
 
-            // ב. הרצת מודל הלמידה העצמית המקומי (KNN)
-            // 🧠 סינון דמיון קוסינוס: אנו בודקים האם הדמיון המתמטי לפריט שאימנת גדול מ-82%.
-            // זה פותר את הבאג לחלוטין - כעת יד, קיר או כוס לא יזוהו לעולם כגרביים, אלא המערכת תסרב לזהות ותפעיל את הטיימר!
+            // ג. הרצת מודל הלמידה העצמית המקומי באמצעות מסנן קוסינוס (שדרוג ג')
+            let predictedLabel = "other";
+            let probability = 0;
+            let isKnnPrediction = false;
+
+            const activation = model.infer(activeCanvas, true);
+
             if (knn.getNumClasses() > 0) {
+                // שימוש באלגוריתם הדמיון הקוסינוסי שכתבנו
                 const simResult = await getKnnSimilarity(activation);
 
-                if (simResult.label !== "other" && simResult.label !== "__background__" && simResult.similarity >= 0.82) {
+                // המערכת תזהה רק אם הציון גבוה מ-85% (הגדרת רף קשיח)
+                if (simResult.label !== "__background__" && simResult.similarity >= CONFIDENCE_THRESHOLD) {
                     predictedLabel = simResult.label;
                     probability = simResult.similarity;
                     isKnnPrediction = true;
                 }
             }
 
-            activation.dispose(); // שחרור זיכרון
+            activation.dispose(); 
 
-            // ג. גיבוי במודל הכללי של גוגל (אם הלמידה העצמית לא מצאה משהו ודאי)
+            // ד. גיבוי במודל הכללי של גוגל (אם הלמידה העצמית לא מצאה משהו ודאי)
             if (predictedLabel === "other") {
                 predictedLabel = googleLabel;
                 probability = googleProb;
                 isKnnPrediction = false;
             }
 
-            // ד. עדכון ממשק ושמירה
+            // ה. עדכון ממשק ושמירה
             if (predictedLabel !== "other") {
-                lastLaundryDetectedTime = Date.now(); // עדכון זמן הזיהוי החיובי האחרון
+                lastLaundryDetectedTime = Date.now(); 
                 resetCountdown(); 
                 
                 const hebrewName = getCategoryHebrewName(predictedLabel);
@@ -919,8 +970,11 @@
                 mappedCategoryText.innerText = hebrewName + sourceInfo;
                 mappedCategoryText.style.color = isKnnPrediction ? "#3b82f6" : "#16a34a"; 
                 
-                // הוספת אחוז ודאות בסוף הסטטוס
+                // הוספת ודאות הזיהוי למסך
                 rawOutputText.innerText += ` | ודאות: ${(probability * 100).toFixed(0)}%`;
+
+                // איסוף תמונה מוויקיפדיה להשוואה והצגה (שדרוג ב')
+                fetchWikiReferenceImage(hebrewName);
 
                 // מנגנון שמירה אוטומטי - פותח חלון הצעה מתוזמן חכם
                 if (autoSaveToggle.checked) {
@@ -933,6 +987,7 @@
             } else {
                 mappedCategoryText.innerText = "מחפש פריט ודאי (85% ומעלה)...";
                 mappedCategoryText.style.color = "#64748b";
+                wikiRefImg.style.display = "none"; // הסתרת תמונת השוואה כשאין זיהוי
                 
                 if (Date.now() - lastLaundryDetectedTime > 3000) {
                     lastSavedClass = "";
@@ -985,35 +1040,68 @@
         writeLog("חוזר לסריקה אוטומטית...");
     }
 
-    // מנגנון כשל ידני (מופעל אחרי 10 שניות ללא זיהוי)
-    function triggerManualFallback() {
+    // מנגנון כשל ידני מעוצב ומתוחכם עם "הקפאת פריים מקדימה" (מונע צילום ידיים!)
+    async function triggerManualFallback() {
         isPaused = true;
         timerOverlay.style.display = "none"; 
-        writeLog("⚠️ לא זוהה פריט במשך 10 שניות. עובר לבחירה ידנית.");
-        speak("לא זיהיתי. נא לבחור קטגוריה ללימוד.");
+        
+        writeLog("📸 מצלם ומקפיא פריים למניעת צילום ידיים...");
+        speak("לא זיהיתי. נא להניח את החפץ ולבחור קטגוריה.");
+
+        // א. הקפאת הפריים המדויק באותו שבריר שנייה בקנבס נסתר
+        frozenCanvas = document.createElement('canvas');
+        
+        // נבדוק האם COCO-SSD מזהה חפץ כדי לחתוך אותו כבר מעכשיו
+        let useCrop = false;
+        let cropX = 0, cropY = 0, cropW = video.videoWidth, cropH = video.videoHeight;
+        
+        try {
+            const cocoPred = await cocoModel.detect(video);
+            const targetObj = cocoPred.find(p => p.class !== 'person' && p.score > 0.40);
+            if (targetObj) {
+                const [x, y, w, h] = targetObj.bbox;
+                cropX = x; cropY = y; cropW = w; cropH = h;
+                useCrop = true;
+            }
+        } catch(e) {}
+
+        frozenCanvas.width = cropW;
+        frozenCanvas.height = cropH;
+        const frozenCtx = frozenCanvas.getContext('2d');
+        frozenCtx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+        // ב. ציור הפריים הקפוא בתוך קנבס התצוגה המקדימה במודאל
+        modalCanvas.width = 120;
+        modalCanvas.height = 90;
+        const modalCtx = modalCanvas.getContext('2d');
+        modalCtx.drawImage(frozenCanvas, 0, 0, modalCanvas.width, modalCanvas.height);
+
+        // ג. פתיחת החלון לבחירה נינוחה כשהווידאו קפוא ברקע
         manualModal.style.display = "flex";
     }
 
-    // בחירה ידנית
+    // בחירה ידנית מהמודאל השומרת ומאמנת את הפריים הקפוא המיוצב
     function selectManualCategory(category) {
-        saveSnapshot(`learned_${category}`);
+        // שומר לגלריה את הפריים שהוקפא קודם לכן (ללא הידיים שלך!)
+        saveSnapshot(`learned_${category}`, frozenCanvas);
         
-        const activation = model.infer(video, true);
+        // אימון המודל על הפריים שהוקפא
+        const activation = model.infer(frozenCanvas, true);
         knn.addExample(activation, category);
         
         const hebrewName = getCategoryHebrewName(category);
         writeLog(`🧠 למידה עצמית: המודל למד שחפץ זה הוא "${hebrewName}"!`);
-        speak(`למדתי ${hebrewName} ונשמר בהצלחה`);
+        speak(`למדתי ${hebrewName}`);
         
         closeManualModal();
         saveModelAndCategories(); 
-        renderModalButtons(); 
     }
 
     function closeManualModal() {
         manualModal.style.display = "none";
         secondsLeft = 10; 
         isPaused = false;
+        frozenCanvas = null; // ניקוי זיכרון הפריים הקפוא
     }
 
     // מחיקת כל המידע השמור בדפדפן
@@ -1026,15 +1114,23 @@
         }
     }
 
-    // שמירת התמונה לגלריית המכשיר
-    function saveSnapshot(label) {
+    // שמירת התמונה לגלריית המכשיר (תומכת בקבלת קנבס מיוצב/חתוך)
+    function saveSnapshot(label, canvasSource = video) {
         const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        
+        // אם מקור התמונה הוא וידאו (מצב לייב) או קנבס חתוך/קפוא
+        if (canvasSource === video) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        } else {
+            canvas.width = canvasSource.width;
+            canvas.height = canvasSource.height;
+        }
+        
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(canvasSource, 0, 0, canvas.width, canvas.height);
 
-        // סימון ירוק לנקודת אחיזה של הזרוע הרובוטית במרכז התמונה
+        // סימון ירוק לנקודת אחיזה של הזרוע הרובוטית במרכז התמונה החתוכה
         ctx.fillStyle = "#10b981";
         ctx.beginPath();
         ctx.arc(canvas.width / 2, canvas.height / 2, 8, 0, 2 * Math.PI);
