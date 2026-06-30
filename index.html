@@ -3,42 +3,271 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סורק כביסה - למידה עצמית ואיסוף נתונים</title>
+    <title>סורק כביסה - למידה עצמית ואיסוף נתונים לרובוטיקה</title>
+    <!-- טעינת ספריות TensorFlow.js, MobileNet, KNN Classifier ו-COCO-SSD המעודכנות -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.4/dist/knn-classifier.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+    
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; text-align: center; background: #f1f5f9; margin: 0; padding: 15px; color: #1e293b; }
-        .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); position: relative; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            text-align: center;
+            background: #f1f5f9;
+            margin: 0;
+            padding: 15px;
+            color: #1e293b;
+        }
+        .container {
+            max-width: 500px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            position: relative;
+        }
         h1 { font-size: 1.4rem; margin-bottom: 5px; color: #0f172a; }
         p { color: #64748b; font-size: 0.9rem; margin-top: 0; }
-        .video-container { position: relative; width: 100%; max-width: 500px; margin: 10px auto; border-radius: 12px; overflow: hidden; }
-        video, canvas.freeze-canvas { width: 100%; display: block; background: #000; }
-        .crosshair { position: absolute; top: 50%; left: 50%; width: 16px; height: 16px; transform: translate(-50%, -50%); border: 3px solid #ef4444; border-radius: 50%; background: rgba(239, 68, 68, 0.4); pointer-events: none; box-shadow: 0 0 8px rgba(239, 68, 68, 0.82); }
-        .timer-overlay { position: absolute; bottom: 12px; right: 12px; background: rgba(15, 23, 42, 0.85); color: #ef4444; padding: 6px 12px; border-radius: 20px; font-weight: bold; font-size: 0.85rem; pointer-events: none; z-index: 5; border: 1px solid rgba(239, 68, 68, 0.4); display: none; direction: ltr; }
-        .loading-overlay { background: #f8fafc; padding: 15px; border-radius: 10px; margin-bottom: 15px; font-weight: bold; color: #2563eb; border: 1px solid #e2e8f0; }
-        .detection-card { background: #f8fafc; padding: 15px; border-radius: 10px; margin: 15px 0; border: 1.5px solid #cbd5e1; display: flex; align-items: center; justify-content: space-between; text-align: right; }
-        .category-text { font-size: 1.5rem; font-weight: bold; color: #16a34a; margin: 5px 0; }
-        .wiki-image { width: 80px; height: 80px; border-radius: 8px; object-fit: cover; border: 1.5px solid #cbd5e1; background: #e2e8f0; display: none; }
-        .toggle-container { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #f8fafc; border-radius: 8px; margin-top: 10px; border: 1px solid #e2e8f0; }
-        .batch-panel { background: #f8fafc; border: 1.5px dashed #cbd5e1; padding: 15px; border-radius: 10px; margin-top: 15px; text-align: right; }
-        .batch-panel h3 { margin: 0 0 10px 0; font-size: 1.1rem; color: #1e293b; }
-        .batch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85rem; }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 10px auto;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        video, canvas.freeze-canvas {
+            width: 100%;
+            display: block;
+            background: #000;
+        }
+        /* קנבס שקוף לציור קווי סימון ירוקים סביב הבגד (חדש!) */
+        .overlay-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 3;
+        }
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            transform: translate(-50%, -50%);
+            border: 3px solid #ef4444;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.4);
+            pointer-events: none;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.82);
+            z-index: 2;
+        }
+
+        .timer-overlay {
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            background: rgba(15, 23, 42, 0.85);
+            color: #ef4444; 
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.85rem;
+            pointer-events: none;
+            z-index: 5;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            display: none; 
+            direction: ltr; 
+        }
+
+        .loading-overlay {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            font-weight: bold;
+            color: #2563eb;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .detection-card {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border: 1.5px solid #cbd5e1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            text-align: right;
+        }
+
+        .category-text {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #16a34a;
+            margin: 5px 0;
+        }
+
+        .wiki-image {
+            width: 80px;
+            height: 80px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 1.5px solid #cbd5e1;
+            background: #e2e8f0;
+            display: none;
+        }
+
+        .toggle-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #f8fafc;
+            border-radius: 8px;
+            margin-top: 10px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .batch-panel {
+            background: #f8fafc;
+            border: 1.5px dashed #cbd5e1;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            text-align: right;
+        }
+        .batch-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.1rem;
+            color: #1e293b;
+        }
+        .batch-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
         .batch-grid label { font-weight: bold; }
-        .batch-grid select, .batch-grid input { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-top: 4px; }
-        .modal { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.94); border-radius: 15px; z-index: 10; flex-direction: column; justify-content: center; align-items: center; color: white; padding: 15px; box-sizing: border-box; }
-        .modal-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 12px; color: #38bdf8; padding: 0 10px; }
-        .modal-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 380px; max-height: 280px; overflow-y: auto; padding-right: 5px; }
-        .modal-btn { padding: 12px; font-size: 0.95rem; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: white; transition: opacity 0.15s; }
+        .batch-grid select, .batch-grid input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-sizing: border-box;
+            margin-top: 4px;
+        }
+
+        .modal {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.94);
+            border-radius: 15px;
+            z-index: 10;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+        .modal-title {
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 12px;
+            color: #38bdf8;
+            padding: 0 10px;
+        }
+        .modal-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            width: 100%;
+            max-width: 380px;
+            max-height: 280px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+        .modal-btn {
+            padding: 12px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            color: white;
+            transition: opacity 0.15s;
+        }
         .modal-btn:active { opacity: 0.8; }
-        .preview-canvas { width: 120px; height: 90px; border-radius: 8px; border: 1.5px solid #38bdf8; margin-bottom: 10px; object-fit: cover; background: #000; }
-        .log-box { background: #0f172a; color: #38bdf8; padding: 10px; border-radius: 8px; height: 80px; overflow-y: auto; text-align: left; font-family: monospace; font-size: 0.8rem; margin-top: 15px; }
-        .btn-danger { background: #ef4444; color: white; padding: 10px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 15px; font-size: 0.9rem; }
+
+        .preview-canvas {
+            width: 120px;
+            height: 90px;
+            border-radius: 8px;
+            border: 1.5px solid #38bdf8;
+            margin-bottom: 10px;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .log-box {
+            background: #0f172a;
+            color: #38bdf8;
+            padding: 10px;
+            border-radius: 8px;
+            height: 80px;
+            overflow-y: auto;
+            text-align: left;
+            font-family: monospace;
+            font-size: 0.8rem;
+            margin-top: 15px;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
         .btn-danger:hover { background: #b91c1c; }
-        .category-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
-        .category-btn-group { display: flex; gap: 5px; }
-        .manage-btn { padding: 5px 9px; font-size: 0.78rem; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; color: white; }
+
+        .category-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .category-btn-group {
+            display: flex;
+            gap: 5px;
+        }
+        .manage-btn {
+            padding: 5px 9px;
+            font-size: 0.78rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: white;
+        }
         .btn-reset-class { background: #f59e0b; } 
         .btn-delete-class { background: #ef4444; } 
     </style>
@@ -49,12 +278,16 @@
     <h1>סורק כביסה - למידה עצמית ואיסוף נתונים</h1>
     <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
+    <!-- מודאל למידה אקטיבי עם קנבס הקפאה (10 שניות ללא זיהוי) -->
     <div id="manualModal" class="modal">
         <div class="modal-title">לא זוהה פריט. הפריים הוקפא. בחר קטגוריה ללימוד:</div>
         <canvas id="modalCanvas" class="preview-canvas"></canvas>
-        <div class="modal-buttons" id="modalButtonsContainer"></div>
+        <div class="modal-buttons" id="modalButtonsContainer">
+            <!-- הכפתורים ייווצרו כאן באופן דינמי -->
+        </div>
     </div>
 
+    <!-- מודאל: הצעה לצילום רצף אוטומטי בעקבות זיהוי מוצלח -->
     <div id="autoBatchModal" class="modal">
         <div class="modal-title" id="autoBatchModalTitle">🎉 זוהה פריט כביסה!</div>
         <p style="color: #cbd5e1; margin-top: 0; font-size: 0.9rem;">האם ברצונך לצלם רצף תמונות שלו ללימוד מואץ?</p>
@@ -75,17 +308,23 @@
         </div>
     </div>
 
+    <!-- מודאל דינמי גדול עבור ספירת הדיליי וצילום הרצף המתוזמן -->
     <div id="batchOverlay" class="modal">
         <div id="batchOverlayTitle" class="modal-title" style="font-size: 1.4rem;">הכן את הבגד...</div>
         <div id="batchOverlayCountdown" style="font-size: 4.5rem; font-weight: bold; color: #ef4444; margin: 15px 0;">3</div>
-        <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">נא למקם את פריט הלבוש מתחת לכוונת האדומה</div>
+        <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">הצילום יתחיל בקרוב, נא להזיז את החפץ בין הצילומים!</div>
     </div>
 
-    <div id="loader" class="loading-overlay">⏳ מאתחל מערכת בינה מלאכותית ולמידה עצמית...</div>
+    <div id="loader" class="loading-overlay">
+        ⏳ מאתחל מערכת בינה מלאכותית ולמידה עצמית...
+    </div>
 
     <div class="video-container">
         <video id="webcam" autoplay playsinline muted style="display: none;"></video>
+        <!-- קנבס להקפאת התמונה על מסך המצלמה הראשי -->
         <canvas id="freezeCanvas" class="freeze-canvas" style="display: none;"></canvas>
+        <!-- קנבס שקוף עליון לציור קווי סימון ירוקים עוקבים סביב החפץ -->
+        <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
         <div class="crosshair" id="targetDot" style="display: none;"></div>
         <div class="timer-overlay" id="timerOverlay">🕒 10s</div>
     </div>
@@ -96,6 +335,7 @@
             <div class="category-text" id="mappedCategory">ממתין לפריט...</div>
             <div style="font-size: 0.85rem; color: #64748b;" id="rawOutput">חיפוש בגוגל (גולמי): -</div>
         </div>
+        <!-- תמונת השוואה מוויקיפדיה למניעת בלבול -->
         <img id="wikiRefImg" class="wiki-image" src="" alt="Wikipedia Reference">
     </div>
 
@@ -104,6 +344,7 @@
         <input type="checkbox" id="autoSaveToggle" style="transform: scale(1.3); cursor: pointer;" checked>
     </div>
 
+    <!-- פנל שליטה לצילום רצף מתוזמן ואימון מהיר -->
     <div class="batch-panel">
         <h3>📸 צילום רצף חכם ללימוד מהיר</h3>
         <div class="batch-grid">
@@ -123,22 +364,27 @@
         <button onclick="startTimedBatch()" style="width: 100%; margin-top: 12px; background: #8b5cf6;">החל צילום רצף ואימון מתוזמן 🚀</button>
     </div>
 
+    <!-- לוח ניהול זיכרון וקטגוריות עם כפתורי פעולה מהירים -->
     <div class="batch-panel" style="border-style: solid;">
         <h3>📋 ניהול קטגוריות וזיכרון המודל</h3>
         <div style="display: flex; gap: 10px; margin-bottom: 12px;">
             <button onclick="createNewCategory()" style="background: #2563eb; flex: 1; padding: 10px; border-radius: 6px; font-weight: bold; border: none; color: white; cursor: pointer;">➕ הוסף קטגוריה חדשה</button>
             <button onclick="calibrateBackground()" style="background: #0f172a; flex: 1; padding: 10px; border-radius: 6px; font-weight: bold; border: none; color: #38bdf8; border: 1px solid #38bdf8; cursor: pointer;">🎯 כייל רקע ידנית</button>
         </div>
-        <div id="categoryManagerList"></div>
+        <div id="categoryManagerList">
+            <!-- הקטגוריות והזיכרון שלהן ייטענו כאן דינמית -->
+        </div>
     </div>
 
     <button class="btn-danger" onclick="clearSavedData()">אתחל מערכת ומחק זיכרון כללי 🗑️</button>
+
     <div class="log-box" id="log"></div>
 </div>
 
 <script>
     const video = document.getElementById('webcam');
     const freezeCanvas = document.getElementById('freezeCanvas'); 
+    const overlayCanvas = document.getElementById('overlayCanvas'); 
     const targetDot = document.getElementById('targetDot');
     const timerOverlay = document.getElementById('timerOverlay');
     const loader = document.getElementById('loader');
@@ -170,8 +416,14 @@
     const CONFIDENCE_THRESHOLD = 0.85; 
 
     let lastLaundryDetectedTime = Date.now(); 
+
+    // משתנה זמני לשמירת קטגוריה שזוהתה אוטומטית לטובת מודאל ההצעה
     let detectedCategoryForAutoBatch = "";
+
+    // משתנה לשמירת הפריים שהוקפא בכשל ידני או אוטומטי (מונע צילום ידיים!)
     let frozenCanvas = null;
+
+    // משתני טיימר מתוזמן (צילום רצף) גלובליים
     let batchCaptureInterval = null; 
 
     let laundryCategories = [
@@ -194,9 +446,13 @@
         }
     }
 
+    // הפעלת מצלמה
     async function startCamera() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" },
+                audio: false
+            });
             video.srcObject = stream;
         } catch (err) {
             try {
@@ -213,33 +469,44 @@
         timerOverlay.style.display = "block";
     }
 
+    // פונקציה חכמה להקפאת הווידאו על המסך הראשי
     function freezeScreen() {
         if (!freezeCanvas || !video) return;
         freezeCanvas.width = video.videoWidth || 640;
         freezeCanvas.height = video.videoHeight || 480;
         const ctx = freezeCanvas.getContext('2d');
         ctx.drawImage(video, 0, 0, freezeCanvas.width, freezeCanvas.height);
+        
         video.style.display = "none";
+        overlayCanvas.style.display = "none"; // מסתיר את קווי הסימון בזמן הקפאה
         freezeCanvas.style.display = "block";
     }
 
+    // הפשרת המצלמה וחזרה לשידור חי
     function unfreezeScreen() {
         if (!freezeCanvas || !video) return;
         freezeCanvas.style.display = "none";
         video.style.display = "block";
+        overlayCanvas.style.display = "block";
     }
 
+    // פונקציית כיול רקע (שולחן ריק) ידנית
     function calibrateBackground() {
         if (!model || !knn || isPaused) {
             writeLog("⚠️ לא ניתן לכייל רקע כעת (המערכת בהשהיה/טעינה).");
             return;
         }
+        
         try {
-            try { knn.clearClass('__background__'); } catch(e) {}
+            try {
+                knn.clearClass('__background__');
+            } catch(e) {}
+
             for (let i = 0; i < 5; i++) {
                 const activation = model.infer(video, true);
                 knn.addExample(activation, '__background__');
             }
+            
             writeLog("🌱 כיול רקע (שולחן ריק) הושלם בהצלחה!");
             speak("כיול רקע הושלם");
             saveModelAndCategories();
@@ -249,6 +516,7 @@
         }
     }
 
+    // שליפת תמונת אימות אמיתית מוויקיפדיה ללא מפתח API
     async function fetchWikiReferenceImage(categoryName) {
         try {
             let searchLabel = categoryName.split(' ')[0].replace(/[()]/g, '').trim();
@@ -267,18 +535,23 @@
                 wikiRefImg.style.display = "block";
                 return;
             }
-        } catch (e) { console.log("Wiki fetch failed: ", e); }
+        } catch (e) {
+            console.log("Wiki fetch failed: ", e);
+        }
         wikiRefImg.style.display = "none";
     }
 
+    // מנגנון חישוב דמיון קוסינוסי מורחב הכולל דחיית דמיון לרקע (שדרוג ג')
     async function getKnnSimilarity(activation) {
         const dataset = knn.getClassifierDataset();
         let maxSim = 0;
         let bestLabel = "other";
+        let bgSim = 0;
+
         try {
             const queryNorm = tf.div(activation, tf.norm(activation));
+
             for (const [label, classTensor] of Object.entries(dataset)) {
-                if (label === '__background__') continue;
                 const norms = tf.norm(classTensor, 'euclidean', 1, true);
                 const normalizedClassTensor = tf.div(classTensor, norms);
                 const similarities = tf.matMul(queryNorm, normalizedClassTensor, false, true);
@@ -290,13 +563,23 @@
                 similarities.dispose();
                 maxClassSimTensor.dispose();
 
-                if (maxClassSim > maxSim) {
+                if (label === '__background__') {
+                    bgSim = maxClassSim;
+                } else if (maxClassSim > maxSim) {
                     maxSim = maxClassSim;
                     bestLabel = label;
                 }
             }
             queryNorm.dispose();
-        } catch (err) { console.error("Cosine calculations error: ", err); }
+        } catch (err) {
+            console.error("Cosine calculations error: ", err);
+        }
+
+        // הגנה קריטית: אם הפריט שנמדד דומה יותר לרקע החלק מאשר לקטגוריה אישית - דחה את הזיהוי!
+        if (bgSim > maxSim) {
+            return { label: "other", similarity: 0 };
+        }
+
         return { label: bestLabel, similarity: maxSim };
     }
 
@@ -305,9 +588,11 @@
         return found ? found.name.split(' ')[0] : key;
     }
 
+    // מיפוי עבור המודל של גוגל
     function mapPredictionToLaundry(label) {
         const l = label.toLowerCase();
-        if (l.includes('jersey') || l.includes('t-shirt') || l.includes('tee shirt') || l.includes('sweater') || l.includes('cardigan') || l.includes('sweatshirt')) {
+        if (l.includes('jersey') || l.includes('t-shirt') || l.includes('tee shirt') || 
+            l.includes('sweater') || l.includes('cardigan') || l.includes('sweatshirt')) {
             return { name: "חולצה (Shirt)", key: "shirt" };
         }
         if (l.includes('jeans') || l.includes('denim') || l.includes('trousers') || l.includes('pants')) {
@@ -322,13 +607,19 @@
         return { name: "לא זוהה", key: "other" };
     }
 
+    // שמירה אוטומטית לזיכרון
     function saveModelAndCategories() {
         try {
             localStorage.setItem('laundryCategories', JSON.stringify(laundryCategories));
+
             if (knn && knn.getNumClasses() > 0) {
                 const dataset = knn.getClassifierDataset();
                 const datasetArray = Object.entries(dataset).map(([label, tensor]) => {
-                    return [label, Array.from(tensor.dataSync()), tensor.shape];
+                    return [
+                        label,
+                        Array.from(tensor.dataSync()),
+                        tensor.shape
+                    ];
                 });
                 localStorage.setItem('knnDataset', JSON.stringify(datasetArray));
                 writeLog("💾 הנתונים ומודל הלמידה נשמרו אוטומטית בדפדפן!");
@@ -336,9 +627,12 @@
                 localStorage.removeItem('knnDataset'); 
                 writeLog("💾 קטגוריות נשמרו.");
             }
-        } catch (e) { writeLog("❌ שגיאה בשמירה לזיכרון הדפדפן: " + e.message); }
+        } catch (e) {
+            writeLog("❌ שגיאה בשמירה לזיכרון הדפדפן: " + e.message);
+        }
     }
 
+    // אתחול המערכות וטעינת זיכרון שמור
     async function initAI() {
         try {
             const savedCategories = localStorage.getItem('laundryCategories');
@@ -361,7 +655,9 @@
                     });
                     knn.setClassifierDataset(tensorObj);
                     writeLog("🧠 נטען מודל למידה עצמית שמור מהפעלות קודמות!");
-                } catch (e) { writeLog("❌ שגיאה בטעינת זיכרון הלמידה: " + e.message); }
+                } catch (e) {
+                    writeLog("❌ שגיאה בטעינת זיכרון הלמידה: " + e.message);
+                }
             }
 
             loader.style.display = "none";
@@ -369,7 +665,9 @@
             writeLog("המערכת מוכנה לפעילות!");
             renderModalButtons(); 
             detectFrame();
-        } catch (err) { writeLog("שגיאה באתחול: " + err.message); }
+        } catch (err) {
+            writeLog("שגיאה באתחול: " + err.message);
+        }
     }
 
     function renderModalButtons() {
@@ -410,7 +708,11 @@
         const randomColors = ["#06b6d4", "#ec4899", "#14b8a6", "#f43f5e", "#84cc16"];
         const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
 
-        laundryCategories.push({ key: key, name: `${sanitizedName} (מותאם)`, color: randomColor });
+        laundryCategories.push({
+            key: key,
+            name: `${sanitizedName} (מותאם)`,
+            color: randomColor
+        });
 
         writeLog(`➕ נוספה קטגוריה חדשה לרשימה: ${sanitizedName}`);
         speak(`נוספה קטגוריית ${sanitizedName}`);
@@ -455,43 +757,63 @@
                         knn.clearClass(key);
                         writeLog(`🧹 נמחק זיכרון הלמידה של הקטגוריה: ${name}`);
                         speak(`נמחק הזיכרון של ${name}`);
+                        
                         saveModelAndCategories();
                         renderModalButtons(); 
-                    } else { alert(`לא קיים מידע למידה בזיכרון עבור "${name}".`); }
-                } catch (e) { writeLog("❌ שגיאה במחיקת זיכרון: " + e.message); }
+                    } else {
+                        alert(`לא קיים מידע למידה בזיכרון עבור "${name}".`);
+                    }
+                } catch (e) {
+                    writeLog("❌ שגיאה במחיקת זיכרון: " + e.message);
+                }
             }
         }
     }
 
     function deleteCategory(key) {
         const name = getCategoryHebrewName(key);
+
         if (laundryCategories.length <= 1) {
             alert("חובה להשאיר לפחות קטגוריה אחת במערכת!");
             return;
         }
+
         if (confirm(`האם אתה בטוח שברצונך למחוק לחלוטין את הקטגוריה "${name}" ואת כל זיכרון הלמידה שלה מהמערכת?`)) {
-            if (knn) { try { if (knn.getClassExampleCount()[key]) { knn.clearClass(key); } } catch (e) {} }
+            if (knn) {
+                try {
+                    if (knn.getClassExampleCount()[key]) {
+                        knn.clearClass(key);
+                    }
+                } catch (e) {}
+            }
+
             laundryCategories = laundryCategories.filter(cat => cat.key !== key);
+            
             writeLog(`🗑️ הקטגוריה "${name}" נמחקה לחלוטין מהמערכת.`);
             speak(`מחקתי את קטגוריית ${name}`);
+
             saveModelAndCategories();
             renderModalButtons();
         }
     }
 
+    // פונקציות ניהול טיימר ה-10 שניות הויזואלי
     function startCountdown() {
         if (countdownActive) return; 
         countdownActive = true;
+        
         timerOverlay.style.display = "block";
         timerOverlay.style.color = "#ef4444"; 
         timerOverlay.style.borderColor = "rgba(239, 68, 68, 0.4)";
         timerOverlay.innerText = `🕒 ידני בעוד: ${secondsLeft}ש'`;
 
         if (countdownInterval) clearInterval(countdownInterval);
+
         countdownInterval = setInterval(() => {
             if (isPaused) return;
             secondsLeft--;
             timerOverlay.innerText = `🕒 ידני בעוד: ${secondsLeft}ש'`;
+
             if (secondsLeft <= 0) {
                 clearInterval(countdownInterval);
                 countdownInterval = null;
@@ -508,27 +830,35 @@
             countdownInterval = null;
         }
         countdownActive = false;
+        
         timerOverlay.style.display = "block";
         timerOverlay.style.color = "#10b981"; 
         timerOverlay.style.borderColor = "rgba(16, 185, 129, 0.4)";
         timerOverlay.innerText = `🕒 זיהוי נעול`;
     }
 
+    // מנגנון הפעלת צילום רצף ידני מתוך פנל השליטה
     function startTimedBatch() {
         const delay = parseInt(document.getElementById('batchDelayInput').value) || 3;
         const total = parseInt(document.getElementById('batchCountInput').value) || 5;
         const category = batchCategorySelect.value;
+
+        // הפעלת התהליך השלבי
         runBatchCaptureProcess(total, category, delay);
     }
 
+    // תהליך צילום הרצף המתוזמן החדש (שלב אחר שלב)
     function runBatchCaptureProcess(total, category, delay) {
         isPaused = true; 
         timerOverlay.style.display = "none"; 
+
         const batchOverlay = document.getElementById('batchOverlay');
         batchOverlay.style.display = "flex";
+
         captureStep(1, total, delay, category);
     }
 
+    // פונקציה רקורסיבית המנהלת ספירה לאחור ייעודית לפני *כל תמונה ותמונה*
     function captureStep(index, total, delay, category) {
         const batchCounter = document.getElementById('batchOverlayCountdown');
         const batchTitle = document.getElementById('batchOverlayTitle');
@@ -548,19 +878,30 @@
                 speak(secondsRemaining.toString());
             } else {
                 clearInterval(stepInterval);
+                
+                // הדיליי הסתיים - מבצעים חיתוך וזיהוי חכם ברגע הצילום
                 let captureCanvas = video;
                 try {
                     const cocoPred = await cocoModel.detect(video);
                     const targetObj = cocoPred.find(p => p.class !== 'person' && p.score > 0.40);
                     if (targetObj) {
                         const [x, y, w, h] = targetObj.bbox;
+                        // הופך לריבוע מושלם 224x224 למניעת עיוותים (שדרוג א'!)
+                        const size = Math.max(w, h);
+                        const centerX = x + w / 2;
+                        const centerY = y + h / 2;
+                        const sqX = Math.max(0, centerX - size / 2);
+                        const sqY = Math.max(0, centerY - size / 2);
+                        const sqW = Math.min(video.videoWidth - sqX, size);
+                        const sqH = Math.min(video.videoHeight - sqY, size);
+
                         const cropCanvas = document.createElement('canvas');
-                        cropCanvas.width = w;
-                        cropCanvas.height = h;
+                        cropCanvas.width = 224;
+                        cropCanvas.height = 224;
                         const cropCtx = cropCanvas.getContext('2d');
-                        cropCtx.drawImage(video, x, y, w, h, 0, 0, w, h);
+                        cropCtx.drawImage(video, sqX, sqY, sqW, sqH, 0, 0, 224, 224);
                         captureCanvas = cropCanvas;
-                        writeLog("✂️ האובייקט נחתך ונוקה מרקע השולחן בהצלחה!");
+                        writeLog("✂️ האובייקט נחתך ונוקה מרקע השולחן בצורה ריבועית מיוצבת!");
                     }
                 } catch(e) {}
 
@@ -573,8 +914,12 @@
                 speak("צולַם");
 
                 if (index < total) {
-                    setTimeout(() => { captureStep(index + 1, total, delay, category); }, 500);
-                } else { finishBatchCapture(total); }
+                    setTimeout(() => {
+                        captureStep(index + 1, total, delay, category);
+                    }, 500);
+                } else {
+                    finishBatchCapture(total);
+                }
             }
         }, 1000);
     }
@@ -590,6 +935,7 @@
         renderModalButtons(); 
     }
 
+    // לולאת הזיהוי המשודרגת (זיהוי קוסינוסי + חיתוך אובייקטים COCO-SSD)
     async function detectFrame() {
         if (!model || !knn || !cocoModel || isPaused) {
             requestAnimationFrame(detectFrame);
@@ -597,20 +943,47 @@
         }
 
         try {
+            // א. הרצת COCO-SSD לטובת חיתוך אובייקטים מהיר
             const cocoPred = await cocoModel.detect(video);
             let activeCanvas = video; 
+
+            // עדכון גודל קנבס קווי הסימון המעופפים בשידור חי (שדרוג ב'!)
+            if (overlayCanvas.width !== video.clientWidth || overlayCanvas.height !== video.clientHeight) {
+                overlayCanvas.width = video.clientWidth;
+                overlayCanvas.height = video.clientHeight;
+            }
+            const overlayCtx = overlayCanvas.getContext('2d');
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
             const targetObj = cocoPred.find(p => p.class !== 'person' && p.score > 0.40);
             if (targetObj) {
                 const [x, y, w, h] = targetObj.bbox;
+                // קרופ ריבועי מושלם (שדרוג א'!)
+                const size = Math.max(w, h);
+                const centerX = x + w / 2;
+                const centerY = y + h / 2;
+                const sqX = Math.max(0, centerX - size / 2);
+                const sqY = Math.max(0, centerY - size / 2);
+                const sqW = Math.min(video.videoWidth - sqX, size);
+                const sqH = Math.min(video.videoHeight - sqY, size);
+
                 const cropCanvas = document.createElement('canvas');
-                cropCanvas.width = w;
-                cropCanvas.height = h;
+                cropCanvas.width = 224;
+                cropCanvas.height = 224;
                 const cropCtx = cropCanvas.getContext('2d');
-                cropCtx.drawImage(video, x, y, w, h, 0, 0, w, h);
+                cropCtx.drawImage(video, sqX, sqY, sqW, sqH, 0, 0, 224, 224);
                 activeCanvas = cropCanvas;
+
+                // ציור קו סימון ירוק עוקב סביב האובייקט על המסך (שדרוג ב'!)
+                const scaleX = overlayCanvas.width / video.videoWidth;
+                const scaleY = overlayCanvas.height / video.videoHeight;
+                overlayCtx.strokeStyle = "#10b981"; // ירוק אמרלד
+                overlayCtx.lineWidth = 4;
+                overlayCtx.lineJoin = "round";
+                overlayCtx.strokeRect(x * scaleX, y * scaleY, w * scaleX, h * scaleY);
             }
 
+            // ב. הרצת זיהוי גוגל (MobileNet) כגיבוי מקבילי
             const predictions = await model.classify(activeCanvas);
             let googleLabel = "other";
             let googleProb = 0;
@@ -629,6 +1002,7 @@
 
             rawOutputText.innerText = `חיפוש בגוגל (גולמי): ${rawName}`;
 
+            // ג. הרצת מודל הלמידה העצמית המקומי באמצעות מסנן קוסינוס (שדרוג ג')
             let predictedLabel = "other";
             let probability = 0;
             let isKnnPrediction = false;
@@ -637,21 +1011,37 @@
 
             if (knn.getNumClasses() > 0) {
                 const simResult = await getKnnSimilarity(activation);
+
+                // המערכת תזהה רק אם הציון גבוה מ-85% (הגדרת רף קשיח)
                 if (simResult.label !== "__background__" && simResult.similarity >= CONFIDENCE_THRESHOLD) {
                     predictedLabel = simResult.label;
                     probability = simResult.similarity;
                     isKnnPrediction = true;
+
+                    // ציור טקסט בתוך קופסת הסימון בשידור חי אם יש זיהוי (שדרוג ב'!)
+                    if (targetObj) {
+                        const [x, y, w, h] = targetObj.bbox;
+                        const scaleX = overlayCanvas.width / video.videoWidth;
+                        const scaleY = overlayCanvas.height / video.videoHeight;
+                        overlayCtx.fillStyle = "rgba(16, 185, 129, 0.85)";
+                        overlayCtx.fillRect(x * scaleX, y * scaleY - 26, 130, 26);
+                        overlayCtx.fillStyle = "#ffffff";
+                        overlayCtx.font = "bold 13px system-ui";
+                        overlayCtx.fillText(getCategoryHebrewName(predictedLabel), x * scaleX + 8, y * scaleY - 8);
+                    }
                 }
             }
 
             activation.dispose(); 
 
+            // ד. גיבוי במודל הכללי של גוגל (אם הלמידה העצמית לא מצאה משהו ודאי)
             if (predictedLabel === "other") {
                 predictedLabel = googleLabel;
                 probability = googleProb;
                 isKnnPrediction = false;
             }
 
+            // ה. עדכון ממשק ושמירה
             if (predictedLabel !== "other") {
                 lastLaundryDetectedTime = Date.now(); 
                 resetCountdown(); 
@@ -663,8 +1053,10 @@
                 mappedCategoryText.style.color = isKnnPrediction ? "#3b82f6" : "#16a34a"; 
                 rawOutputText.innerText += ` | ודאות: ${(probability * 100).toFixed(0)}%`;
 
+                // איסוף תמונה מוויקיפדיה להשוואה והצגה (שדרוג ב')
                 fetchWikiReferenceImage(hebrewName);
 
+                // מנגנון שמירה אוטומטי - פותח חלון הצעה מתוזמן חכם
                 if (autoSaveToggle.checked) {
                     const now = Date.now();
                     if (predictedLabel !== lastSavedClass) {
@@ -677,26 +1069,36 @@
                 mappedCategoryText.style.color = "#64748b";
                 wikiRefImg.style.display = "none"; 
                 
-                if (Date.now() - lastLaundryDetectedTime > 3000) { lastSavedClass = ""; }
+                if (Date.now() - lastLaundryDetectedTime > 3000) {
+                    lastSavedClass = "";
+                }
+                
                 startCountdown();
             }
+
         } catch (e) {}
+
         requestAnimationFrame(detectFrame);
     }
 
+    // מנגנון הצעה אוטומטי - פתיחת מודאל הצעה לצילום רצף בזיהוי מוצלח
     function triggerAutoBatchModal(category) {
         isPaused = true; 
         timerOverlay.style.display = "none";
-        freezeScreen(); // הקפאה מלאה של המסך הראשי (תוקן!)
         
         detectedCategoryForAutoBatch = category;
         const name = getCategoryHebrewName(category);
         
         autoBatchModalTitle.innerText = `🎉 זוהה פריט: ${name}!`;
         speak(`זוהה פריט ${name}. האם לצלם רצף?`);
+        
+        // הקפאה מלאה של המסך הראשי בעת זיהוי אוטומטי למניעת מריחות (השדרוג החדש שלך!)
+        freezeScreen();
+        
         autoBatchModal.style.display = "flex";
     }
 
+    // אישור המודאל האוטומטי והפעלת צילום הרצף המתוזמן
     function confirmAutoBatch() {
         const total = parseInt(document.getElementById('autoBatchCount').value) || 5;
         const delay = parseInt(document.getElementById('autoBatchDelay').value) || 3;
@@ -705,6 +1107,7 @@
         runBatchCaptureProcess(total, detectedCategoryForAutoBatch, delay);
     }
 
+    // אפשרות במודאל לשמור רק תמונה בודדת
     function saveSingleAutoShot() {
         saveSnapshot(detectedCategoryForAutoBatch, freezeCanvas);
         speak("תמונה בודדת נשמרה");
@@ -719,13 +1122,14 @@
         writeLog("חוזר לסריקה אוטומטית...");
     }
 
+    // מנגנון כשל ידני מעוצב ומתוחכם עם "הקפאת פריים מקדימה"
     async function triggerManualFallback() {
         isPaused = true;
         timerOverlay.style.display = "none"; 
         writeLog("📸 מצלם ומקפיא פריים למניעת צילום ידיים...");
         speak("לא זיהיתי. נא להניח את החפץ ולבחור קטגוריה.");
 
-        freezeScreen(); // הקפאה מלאה של המסך הראשי (תוקן!)
+        freezeScreen(); // הקפאה מלאה של המסך הראשי
 
         modalCanvas.width = 120;
         modalCanvas.height = 90;
@@ -734,13 +1138,17 @@
         manualModal.style.display = "flex";
     }
 
+    // בחירה ידנית השומרת ומאמנת את הפריים הקפוא המיוצב
     function selectManualCategory(category) {
         saveSnapshot(`learned_${category}`, freezeCanvas);
+        
         const activation = model.infer(freezeCanvas, true);
         knn.addExample(activation, category);
+        
         const hebrewName = getCategoryHebrewName(category);
         writeLog(`🧠 למידה עצמית: המודל למד שחפץ זה הוא "${hebrewName}"!`);
         speak(`למדתי ${hebrewName}`);
+        
         closeManualModal();
         saveModelAndCategories(); 
         renderModalButtons(); 
@@ -753,6 +1161,7 @@
         isPaused = false;
     }
 
+    // מחיקת כל המידע השמור בדפדפן
     function clearSavedData() {
         if (confirm("האם אתה בטוח שברצונך למחוק לצמיתות את כל הקטגוריות המותאמות אישית ואת זיכרון הלמידה של המודל?")) {
             localStorage.removeItem('laundryCategories');
@@ -762,6 +1171,7 @@
         }
     }
 
+    // שמירת התמונה לגלריית המכשיר (תומכת בקבלת קנבס מיוצב/חתוך)
     function saveSnapshot(label, canvasSource = video) {
         const canvas = document.createElement('canvas');
         if (canvasSource === video) {
@@ -774,6 +1184,7 @@
         const ctx = canvas.getContext('2d');
         ctx.drawImage(canvasSource, 0, 0, canvas.width, canvas.height);
 
+        // סימון ירוק לנקודת אחיזה של הזרוע הרובוטית במרכז התמונה החתוכה
         ctx.fillStyle = "#10b981";
         ctx.beginPath();
         ctx.arc(canvas.width / 2, canvas.height / 2, 8, 0, 2 * Math.PI);
@@ -782,11 +1193,14 @@
         const imageURL = canvas.toDataURL("image/jpeg");
         const downloadLink = document.createElement('a');
         downloadLink.href = imageURL;
+        
         const timestamp = Date.now();
         downloadLink.download = `${label}_${timestamp}.jpg`;
+        
         document.body.appendChild(downloadLink);
         downloadLink.click();
         document.body.removeChild(downloadLink);
+
         writeLog(`📸 תמונה נשמרה בגלריה: ${label}`);
     }
 
