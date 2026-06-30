@@ -51,21 +51,22 @@
     <h1>סורק כביסה - למידה עצמית ואיסוף נתונים</h1>
     <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
+    <!-- מודאל למידה אקטיבי עם כפתורים דינמיים וקנבס הקפאה (10 שניות ללא זיהוי) -->
     <div id="manualModal" class="modal">
         <div class="modal-title">לא זוהה פריט. הפריים הוקפא. בחר קטגוריה ללימוד:</div>
         <canvas id="modalCanvas" class="preview-canvas"></canvas>
         <div class="modal-buttons" id="modalButtonsContainer"></div>
     </div>
 
-    <!-- מודאל אוטומטי משודרג המאפשר שינוי קטגוריה ישירות בפנים (שדרוג תמונה 1!) -->
+    <!-- מודאל: הצעה לצילום רצף אוטומטי בעקבות זיהוי מוצלח (כולל תיבת הבחירה לשינוי הקטגוריה - תוקן!) -->
     <div id="autoBatchModal" class="modal">
         <div class="modal-title" id="autoBatchModalTitle">🎉 זוהה פריט כביסה!</div>
         <p style="color: #cbd5e1; margin-top: 0; font-size: 0.9rem;">האם ברצונך לצלם רצף תמונות שלו ללימוד מואץ?</p>
         
-        <!-- תיבת בחירת קטגוריה לתיקון מהיר בתוך הזיהוי האוטומטי (דרישת תמונה 1!) -->
+        <!-- תיבת בחירת קטגוריה לתיקון מהיר בתוך הזיהוי האוטומטי (שוחזר ל-HTML - פותר את הבאג!) -->
         <div style="margin-bottom: 12px; width: 100%; max-width: 320px; text-align: right;">
             <label style="color: white; font-size: 0.85rem; font-weight: bold;">שנה קטגוריה (במידה והזיהוי שגוי):</label>
-            <select id="autoBatchCategorySelect" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-top: 4px; background: #f8fafc;"></select>
+            <select id="autoBatchCategorySelect" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-top: 4px; background: #f8fafc; color: #1e293b; font-weight: bold;"></select>
         </div>
 
         <div class="batch-grid" style="width: 100%; max-width: 320px; background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: right;">
@@ -85,13 +86,14 @@
         </div>
     </div>
 
+    <!-- מודאל דינמי גדול עבור ספירת הדיליי וצילום הרצף המתוזמן -->
     <div id="batchOverlay" class="modal">
         <div id="batchOverlayTitle" class="modal-title" style="font-size: 1.4rem;">הכן את הבגד...</div>
         <div id="batchOverlayCountdown" style="font-size: 4.5rem; font-weight: bold; color: #ef4444; margin: 15px 0;">3</div>
         <div id="batchOverlaySub" style="color: #cbd5e1; font-size: 0.95rem;">הצילום יתחיל בקרוב, נא להזיז את החפץ בין הצילומים!</div>
     </div>
 
-    <div id="loader" class="loading-overlay">⏳ מאתחל מערכת בינה מלאכותית ולמידה עצמית...</div>
+    <div id="loader" class="loading-overlay">⏳ מאתחל מערכת בינה מלאכשית ולמידה עצמית...</div>
 
     <div class="video-container">
         <video id="webcam" autoplay playsinline muted style="display: none;"></video>
@@ -131,7 +133,7 @@
                 <select id="batchCategorySelect"></select>
             </div>
             <div>
-                <label for="batchCountInput">כמות תמונות:</label>
+                <label interpreters for="batchCountInput">כמות תמונות:</label>
                 <input type="number" id="batchCountInput" value="5" min="1" max="50">
             </div>
             <div style="grid-column: span 2;">
@@ -417,10 +419,9 @@
     function renderModalButtons() {
         modalButtonsContainer.innerHTML = "";
         batchCategorySelect.innerHTML = ""; 
-        autoBatchCategorySelect.innerHTML = ""; // איפוס הדרופדאון של תיקון הזיהוי האוטומטי (חדש!)
+        autoBatchCategorySelect.innerHTML = ""; 
 
         laundryCategories.forEach(cat => {
-            // כפתור למודאל הידני
             const btn = document.createElement('button');
             btn.className = "modal-btn";
             btn.style.background = cat.color;
@@ -428,20 +429,17 @@
             btn.onclick = () => selectManualCategory(cat.key);
             modalButtonsContainer.appendChild(btn);
 
-            // אופציה לפנל הרצף הידני
             const opt = document.createElement('option');
             opt.value = cat.key;
             opt.innerText = cat.name.split(' ')[0];
             batchCategorySelect.appendChild(opt);
 
-            // אופציה לתיבת הבחירה החדשה בתוך מודאל הזיהוי האוטומטי (חדש - דרישת תמונה 1!)
             const optAuto = document.createElement('option');
             optAuto.value = cat.key;
             optAuto.innerText = cat.name.split(' ')[0];
             autoBatchCategorySelect.appendChild(optAuto);
         });
 
-        // כפתור הוספת קטגוריה חדשה מתוך המודאל (שוחזר במלואו - דרישתך!)
         const addNewBtn = document.createElement('button');
         addNewBtn.className = "modal-btn";
         addNewBtn.style.background = "#475569"; 
@@ -450,7 +448,6 @@
         addNewBtn.onclick = createNewCategory;
         modalButtonsContainer.appendChild(addNewBtn);
 
-        // כפתור ביטול מתוך המודאל (שוחזר במלואו!)
         const cancelBtn = document.createElement('button');
         cancelBtn.className = "modal-btn";
         cancelBtn.style.background = "#ef4444"; 
@@ -667,7 +664,6 @@
         renderModalButtons(); 
     }
 
-    // לולאת הזיהוי המשודרגת (זיהוי קוסינוסי + חיתוך אובייקטים COCO-SSD)
     async function detectFrame() {
         if (!model || !knn || !cocoModel || isPaused) {
             requestAnimationFrame(detectFrame);
@@ -811,18 +807,16 @@
         autoBatchModalTitle.innerText = `🎉 זוהה פריט: ${name}!`;
         speak(`זוהה פריט ${name}. האם לצלם רצף?`);
         
-        // הגדרת קטגוריית ברירת המחדל בתיבת הבחירה של מודאל הזיהוי האוטומטי (חדש - משימת תמונה 1!)
+        // הגדרת קטגוריית ברירת המחדל בתיבת הבחירה של מודאל הזיהוי האוטומטי 
         autoBatchCategorySelect.value = category;
         
         autoBatchModal.style.display = "flex";
     }
 
-    // אישור המודאל האוטומטי והפעלת צילום הרצף המתוזמן (תומך בקטגוריה החדשה שבחרת!)
     function confirmAutoBatch() {
         const total = parseInt(document.getElementById('autoBatchCount').value) || 5;
         const delay = parseInt(document.getElementById('autoBatchDelay').value) || 3;
         
-        // מקבל את הקטגוריה שנבחרה ידנית בתוך מודאל הזיהוי האוטומטי (חדש - דרישת תמונה 1!)
         const chosenCategory = autoBatchCategorySelect.value;
         
         document.getElementById('autoBatchModal').style.display = "none";
@@ -830,7 +824,6 @@
         runBatchCaptureProcess(total, chosenCategory, delay);
     }
 
-    // אפשרות במודאל לשמור רק תמונה בודדת (תומך בקטגוריה החדשה ששינית במודאל!)
     function saveSingleAutoShot() {
         const chosenCategory = autoBatchCategorySelect.value;
         saveSnapshot(chosenCategory, freezeCanvas);
@@ -846,7 +839,6 @@
         writeLog("חוזר לסריקה אוטומטית...");
     }
 
-    // מנגנון ידני לתיקון מהיר של זיהוי שגוי (הדרישה היציבה והחדשה שלך!)
     function triggerManualCorrection() {
         isCorrectionMode = true;
         writeLog("✏️ הפעלת תיקון זיהוי ידני. הפריים הנוכחי מוקפא.");
@@ -879,7 +871,6 @@
         manualModal.style.display = "flex";
     }
 
-    // בחירה ידנית השומרת ומאמנת את הפריים הקפוא המיוצב (תומך במצב תיקון!)
     function selectManualCategory(category) {
         saveSnapshot(`learned_${category}`, frozenCanvas || freezeCanvas);
         
@@ -898,14 +889,13 @@
 
     function closeManualModal() {
         manualModal.style.display = "none";
-        isCorrectionMode = false; // איפוס תמיד
+        isCorrectionMode = false; 
         unfreezeScreen(); 
         secondsLeft = 10; 
         isPaused = false;
         frozenCanvas = null; 
     }
 
-    // מחיקת כל המידע השמור בדפדפן
     function clearSavedData() {
         if (confirm("האם אתה בטוח שברצונך למחוק לצמיתות את כל הקטגוריות המותאמות אישית ואת זיכרון הלמידה של המודל?")) {
             localStorage.removeItem('laundryCategories');
@@ -915,7 +905,6 @@
         }
     }
 
-    // שמירת התמונה לגלריית המכשיר (תומכת בקבלת קנבס מיוצב/חתוך)
     function saveSnapshot(label, canvasSource = video) {
         const canvas = document.createElement('canvas');
         if (canvasSource === video) {
@@ -928,7 +917,6 @@
         const ctx = canvas.getContext('2d');
         ctx.drawImage(canvasSource, 0, 0, canvas.width, canvas.height);
 
-        // סימון ירוק לנקודת אחיזה של הזרוע הרובוטית במרכז התמונה החתוכה
         ctx.fillStyle = "#10b981";
         ctx.beginPath();
         ctx.arc(canvas.width / 2, canvas.height / 2, 8, 0, 2 * Math.PI);
