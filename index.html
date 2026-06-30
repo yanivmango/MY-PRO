@@ -246,7 +246,7 @@
 <body>
 
 <div class="container">
-    <h1>סורק כביסה - למידה עצמית וצילום רצף חכם</h1>
+    <h1>סורק כביסה - למידה עצמית ואיסוף נתונים</h1>
     <p>הנתונים והלמידה נשמרים בדפדפן אוטומטית גם לאחר סגירת הדף!</p>
 
     <!-- מודאל למידה אקטיבי עם כפתורים דינמיים -->
@@ -298,7 +298,7 @@
     <div class="detection-card" id="detectionArea" style="display: none;">
         <div>סטטוס זיהוי:</div>
         <div class="category-text" id="mappedCategory">ממתין לפריט...</div>
-        <!-- חלון הזיהוי הגולמי של גוגל מוחזר לפעילות מלאה בשידור חי -->
+        <!-- חלון הזיהוי הגולמי של גוגל מתעדכן בשידור חי -->
         <div class="raw-text" id="rawOutput">חיפוש בגוגל (גולמי): -</div>
     </div>
 
@@ -422,9 +422,19 @@
         video.style.display = "block";
         targetDot.style.display = "block";
         timerOverlay.style.display = "block";
+
+        // פותר את בעיית מרוץ הזמנים: כיול רקע אוטומטי מתרחש אך ורק לאחר שהווידאו ממש מנגן בפועל!
+        video.onplaying = () => {
+            setTimeout(() => {
+                const classCounts = knn ? knn.getClassExampleCount() : {};
+                if (!classCounts['__background__'] || classCounts['__background__'] === 0) {
+                    calibrateBackground();
+                }
+            }, 1500); // השהיה קלה לייצוב החשיפה והפוקוס של עדשת המצלמה
+        };
     }
 
-    // פונקציית כיול רקע (שולחן ריק) ידנית (פותרת את בעיית הנעילה לחלוטין)
+    // פונקציית כיול רקע (שולחן ריק) ידנית או אוטומטית (פותרת את בעיית הנעילה לחלוטין)
     function calibrateBackground() {
         if (!model || !knn || isPaused) {
             writeLog("⚠️ לא ניתן לכייל רקע כעת (המערכת בהשהיה/טעינה).");
@@ -450,6 +460,49 @@
         } catch (e) {
             writeLog("❌ שגיאה בכיול הרקע: " + e.message);
         }
+    }
+
+    // פונקציה המחשבת דמיון מתמטי אמיתי (Cosine Similarity) של פריים המצלמה מול התמונות שצילמת (פותרת את בעיית הנעילה)
+    async function getKnnSimilarity(activation) {
+        const dataset = knn.getClassifierDataset();
+        let maxSim = 0;
+        let bestLabel = "other";
+
+        try {
+            // queryNorm = activation / ||activation|| (נרמול וקטור השאילתה)
+            const queryNorm = tf.div(activation, tf.norm(activation));
+
+            for (const [label, classTensor] of Object.entries(dataset)) {
+                if (label === '__background__') continue;
+
+                // חישוב נרמול עבור כל דוגמה ששמרת בבסיס הנתונים
+                const norms = tf.norm(classTensor, 'euclidean', 1, true);
+                const normalizedClassTensor = tf.div(classTensor, norms);
+
+                // מכפלת נקודה בין הוקטורים המנורמלים כדי לחשב דמיון קוסינוס (מ-0 ל-1)
+                const similarities = tf.matMul(queryNorm, normalizedClassTensor, false, true);
+                
+                // מציאת הדמיון הגבוה ביותר בקבוצה זו
+                const maxClassSimTensor = tf.max(similarities);
+                const maxClassSim = (await maxClassSimTensor.data())[0];
+
+                // שחרור זיכרון טנזורים מיידי
+                norms.dispose();
+                normalizedClassTensor.dispose();
+                similarities.dispose();
+                maxClassSimTensor.dispose();
+
+                if (maxClassSim > maxSim) {
+                    maxSim = maxClassSim;
+                    bestLabel = label;
+                }
+            }
+            queryNorm.dispose();
+        } catch (err) {
+            console.error("Error in similarity calculation", err);
+        }
+
+        return { label: bestLabel, similarity: maxSim };
     }
 
     function getCategoryHebrewName(key) {
@@ -799,7 +852,7 @@
         renderModalButtons(); 
     }
 
-    // לולאת הזיהוי המשודרגת (כולל הרצה מקבילה של גוגל-MobileNet)
+    // לולאת הזיהוי המשודרגת (הכוללת סריקה מקבילית וסינון קוסינוס חכם)
     async function detectFrame() {
         if (!model || !knn || isPaused) {
             requestAnimationFrame(detectFrame);
@@ -813,7 +866,7 @@
             let probability = 0;
             let isKnnPrediction = false;
 
-            // א. הרצת זיהוי גוגל (MobileNet) כגיבוי ברקע
+            // א. הרצת זיהוי גוגל (MobileNet) כגיבוי ברקע בשידור חי
             const predictions = await model.classify(video);
             let googleLabel = "other";
             let googleProb = 0;
@@ -834,15 +887,14 @@
             rawOutputText.innerText = `חיפוש בגוגל (גולמי): ${rawName}`;
 
             // ב. הרצת מודל הלמידה העצמית המקומי (KNN)
-            // מוגדר על K=1 לזיהוי מהיר ומדויק מהתמונה הראשונה, ונמנע מנעילה תודות לכיול הרקע הזורם
+            // 🧠 סינון דמיון קוסינוס: אנו בודקים האם הדמיון המתמטי לפריט שאימנת גדול מ-82%.
+            // זה פותר את הבאג לחלוטין - כעת יד, קיר או כוס לא יזוהו לעולם כגרביים, אלא המערכת תסרב לזהות ותפעיל את הטיימר!
             if (knn.getNumClasses() > 0) {
-                const knnResult = await knn.predictClass(activation, 1);
-                const topKnnClass = knnResult.label;
-                const knnConfidence = knnResult.confidences[topKnnClass]; 
+                const simResult = await getKnnSimilarity(activation);
 
-                if (topKnnClass !== "__background__" && knnConfidence >= CONFIDENCE_THRESHOLD) {
-                    predictedLabel = topKnnClass;
-                    probability = knnConfidence;
+                if (simResult.label !== "other" && simResult.label !== "__background__" && simResult.similarity >= 0.82) {
+                    predictedLabel = simResult.label;
+                    probability = simResult.similarity;
                     isKnnPrediction = true;
                 }
             }
@@ -866,6 +918,9 @@
                 
                 mappedCategoryText.innerText = hebrewName + sourceInfo;
                 mappedCategoryText.style.color = isKnnPrediction ? "#3b82f6" : "#16a34a"; 
+                
+                // הוספת אחוז ודאות בסוף הסטטוס
+                rawOutputText.innerText += ` | ודאות: ${(probability * 100).toFixed(0)}%`;
 
                 // מנגנון שמירה אוטומטי - פותח חלון הצעה מתוזמן חכם
                 if (autoSaveToggle.checked) {
@@ -930,7 +985,7 @@
         writeLog("חוזר לסריקה אוטומטית...");
     }
 
-    // מנגנון כשל ידני
+    // מנגנון כשל ידני (מופעל אחרי 10 שניות ללא זיהוי)
     function triggerManualFallback() {
         isPaused = true;
         timerOverlay.style.display = "none"; 
